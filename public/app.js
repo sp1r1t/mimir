@@ -559,7 +559,12 @@ async function refreshStory(storyId) {
   const mapOpen = oldMap ? !oldMap.hasAttribute('hidden') : false;
   const mapFull = oldMap ? oldMap.classList.contains('fullscreen') : false;
   destroyMap(oldMap);
+  // The counters in the fresh story are counted from the moment the page arrived.
+  for (const counter of fresh.querySelectorAll('[data-elapsed-since]')) {
+    counter.setAttribute('data-elapsed-arrived', String(Date.now()));
+  }
   current.replaceWith(fresh);
+  ensureElapsedTicker();
   const list = fresh.querySelector('.timeline');
   if (list) setTimelineOrder(list, storedTimelineOrder());
   const map = fresh.querySelector('#story-map');
@@ -766,3 +771,64 @@ document.addEventListener('keydown', (ev) => {
 
 window.addEventListener('scroll', () => closeTermCard(), { capture: true, passive: true });
 window.addEventListener('resize', () => closeTermCard());
+
+// ---- The writing counter ------------------------------------------------------------
+// While a brief is being written, the page counts the seconds next to the badge. The
+// start time comes from the server, so the count is right even after the page has put
+// a fresh story in place of the old one; the browser only does the counting.
+
+let elapsedTimer = null;
+// How far the clock of the browser is behind the clock of the server, per counter.
+const elapsedSkew = new WeakMap();
+
+function formatElapsed(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+  if (minutes) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+  return `${seconds}s`;
+}
+
+/**
+ * The gap between the two clocks, worked out once per counter: the server says what
+ * time it was when it wrote the page, and the browser says what time it was when the
+ * page arrived. The gap is the same a second later, so the count keeps up.
+ */
+function skewFor(el) {
+  let skew = elapsedSkew.get(el);
+  if (skew === undefined) {
+    const serverNow = Date.parse(el.getAttribute('data-elapsed-now') || '');
+    const arrived = Number(el.getAttribute('data-elapsed-arrived')) || Date.now();
+    skew = Number.isNaN(serverNow) ? 0 : serverNow - arrived;
+    elapsedSkew.set(el, skew);
+  }
+  return skew;
+}
+
+function tickElapsed() {
+  const counters = document.querySelectorAll('[data-elapsed-since]');
+  if (!counters.length) {
+    clearInterval(elapsedTimer);
+    elapsedTimer = null;
+    return;
+  }
+  const now = Date.now();
+  for (const el of counters) {
+    const since = Date.parse(el.getAttribute('data-elapsed-since') || '');
+    if (Number.isNaN(since)) continue;
+    const label = formatElapsed(now + skewFor(el) - since);
+    el.textContent = label;
+    const what = el.getAttribute('data-elapsed-what');
+    if (what) el.setAttribute('title', `${what} for ${label}`);
+  }
+}
+
+/** Start counting, when there is something to count. */
+function ensureElapsedTicker() {
+  if (elapsedTimer || !document.querySelector('[data-elapsed-since]')) return;
+  tickElapsed();
+  elapsedTimer = setInterval(tickElapsed, 1000);
+}
+
+ensureElapsedTicker();

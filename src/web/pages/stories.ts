@@ -334,6 +334,32 @@ function timelineIndex(s: StoryDetail): Map<number, number> {
   return new Map(s.members.map((m, i) => [m.articleId, i + 1]));
 }
 
+/**
+ * How long ago something happened, in the words the counter shows: "42s", "1m 05s",
+ * "1h 03m".
+ */
+export function elapsedLabel(since: string | null, now: number): string | null {
+  if (!since) return null;
+  const ms = now - Date.parse(since);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+  if (minutes) return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
+  return `${seconds}s`;
+}
+
+/**
+ * The seconds counter next to the writing badge. The start time comes from the server,
+ * so the count stays right when the page puts a fresh story in place of the old one;
+ * the browser counts the seconds from there.
+ */
+function writeCounter(since: string | null, now: number, what: string): SafeHtml | null {
+  const label = elapsedLabel(since, now);
+  if (label == null) return null;
+  return html`<span class="write-counter" data-elapsed-since="${since}" data-elapsed-now="${new Date(now).toISOString()}" data-elapsed-what="${what}">${label}</span>`;
+}
+
 function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
   const provider = app.summaries;
   const configured = provider.isConfigured();
@@ -351,11 +377,11 @@ function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
   </form>`;
   const status =
     s.summaryState === 'pending'
-      ? html`<p class="badge-line"><span class="badge pending">Queued</span> ${waitReason ? html`<span class="muted">${waitReason}</span>` : null}</p>
+      ? html`<p class="badge-line"><span class="badge pending">Queued</span> ${writeCounter(s.summaryRequestedAt, now, 'Waiting for the model')} ${waitReason ? html`<span class="muted">${waitReason}</span>` : null}</p>
           ${appLimited && budget.resumesAt ? html`<p class="muted small">Automatic capacity begins returning ${timeEl(budget.resumesAt, now)} (${fmtDate(budget.resumesAt)}).</p>` : null}
           <p class="muted small">Write now moves this request to the front and bypasses Mimir's automatic limit. Provider allowance checks still apply.</p>`
       : s.summaryState === 'running'
-        ? html`<p class="badge-line"><span class="badge pending">Writing</span></p>`
+        ? html`<p class="badge-line"><span class="badge pending">Writing</span> ${writeCounter(s.summaryStartedAt, now, 'Writing the brief')}</p>`
         : s.summaryState === 'failed'
           ? html`<p class="error-text">Writing failed: ${s.summaryError ?? 'unknown error'}</p>`
           : s.summaryState === 'stale'

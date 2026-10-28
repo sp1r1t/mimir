@@ -245,6 +245,9 @@ export interface StoryDetail extends StoryListItem {
   assessments: AssessmentRecord[];
   summary: StorySummaryRecord | null;
   summaryRevisions: { id: number; revision: number; trigger: string; model: string; createdAt: string; articleIds: number[] }[];
+  /** When the reader asked for a brief, and when the writing of it began. */
+  summaryRequestedAt: string | null;
+  summaryStartedAt: string | null;
   placesState: PlacesState;
   placesError: string | null;
   places: StoryPlace[];
@@ -1022,7 +1025,10 @@ export class StoryRepository {
         );
       const id = Number(res.lastInsertRowid);
       this.db
-        .prepare(`UPDATE stories SET summary_id = ?, summary_stale = 0, summary_request = 'idle', summary_error = NULL WHERE id = ?`)
+        .prepare(
+          `UPDATE stories SET summary_id = ?, summary_stale = 0, summary_request = 'idle', summary_error = NULL,
+             summary_started_at = NULL WHERE id = ?`,
+        )
         .run(id, storyId);
       return id;
     })();
@@ -1030,16 +1036,24 @@ export class StoryRepository {
 
   /** The current summary already reflects this input; clear the stale flag without a new revision. */
   confirmSummary(storyId: number): void {
-    this.db.prepare(`UPDATE stories SET summary_stale = 0, summary_request = 'idle', summary_error = NULL WHERE id = ?`).run(storyId);
+    this.db
+      .prepare(
+        `UPDATE stories SET summary_stale = 0, summary_request = 'idle', summary_error = NULL, summary_started_at = NULL WHERE id = ?`,
+      )
+      .run(storyId);
   }
 
   setSummaryRequest(storyId: number, state: 'idle' | 'pending' | 'running' | 'failed', error: string | null = null): void {
+    // The moment the request was made and the moment the generation started: the story
+    // page counts the seconds from them, so the reader can see a brief taking its time.
     this.db
       .prepare(
         `UPDATE stories SET summary_request = ?, summary_error = ?,
-           summary_requested_at = CASE WHEN ? = 'pending' THEN ? ELSE summary_requested_at END WHERE id = ?`,
+           summary_requested_at = CASE WHEN ? = 'pending' THEN ? ELSE summary_requested_at END,
+           summary_started_at = CASE WHEN ? = 'running' THEN ? WHEN ? = 'idle' THEN NULL ELSE summary_started_at END
+           WHERE id = ?`,
       )
-      .run(state, error, state, this.now(), storyId);
+      .run(state, error, state, this.now(), state, this.now(), state, storyId);
   }
 
   recordAttempt(a: {
@@ -1242,7 +1256,12 @@ export class StoryRepository {
     const active = `SELECT 1 FROM jobs j WHERE j.kind = '${kind}' AND j.status IN ('pending', 'running')
                     AND json_extract(j.payload, '$.storyId') = stories.id`;
     const a = this.db.prepare(`UPDATE stories SET summary_request = 'pending' WHERE summary_request IN ('running', 'failed') AND EXISTS (${active} AND j.status = 'pending')`).run().changes;
-    const b = this.db.prepare(`UPDATE stories SET summary_request = 'idle' WHERE summary_request IN ('pending', 'running') AND NOT EXISTS (${active})`).run().changes;
+    const b = this.db
+      .prepare(
+        `UPDATE stories SET summary_request = 'idle', summary_started_at = NULL
+         WHERE summary_request IN ('pending', 'running') AND NOT EXISTS (${active})`,
+      )
+      .run().changes;
     return a + b;
   }
 
@@ -1314,6 +1333,9 @@ export class StoryRepository {
     }));
     const placeState = this.placesState(id);
     const termState = this.termsState(id);
+    const times = this.db
+      .prepare('SELECT summary_requested_at AS requestedAt, summary_started_at AS startedAt FROM stories WHERE id = ?')
+      .get(id) as { requestedAt: string | null; startedAt: string | null } | undefined;
     return {
       ...this.withPublishers([toListItem(row)])[0]!,
       members,
@@ -1322,6 +1344,8 @@ export class StoryRepository {
       assessments,
       summary: this.currentSummary(id),
       summaryRevisions,
+      summaryRequestedAt: times?.requestedAt ?? null,
+      summaryStartedAt: times?.startedAt ?? null,
       placesState: placeState.state,
       placesError: placeState.error,
       places: this.places(id),

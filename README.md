@@ -160,6 +160,11 @@ a key.
   cannot keep the stream open, the page falls back to asking for the story's version
   every few seconds. The same happens when a story develops while the page is open: the
   new articles and the new brief arrive by themselves.
+- **The counter:** while a brief is being written, a seconds counter stands next to the
+  **Writing** badge, so the reader can see how far along it is and how long a brief
+  takes. A queued brief counts the waiting time instead. The count comes from the
+  server, so it stays right when the page puts a fresh story in place of the old one,
+  and it disappears as soon as the brief is there.
 - **Map:** the **Map** button in the story header opens a card with the places the story
   is about on an OpenStreetMap map, and a list of the same places with the articles that
   mention them. A pin's popup links to the articles that name the place. **Full screen**
@@ -463,6 +468,13 @@ come back in the new version. The reader's timeline order and the open map are k
 and the map is drawn again with the new places. The two buttons on the page — **Write
 the brief** and **Find places** — post in the background and let the page update
 itself when the answer is ready.
+
+**The seconds counter.** While a brief is being written, the **Writing** badge carries a
+counter: the seconds since the writing began, counting up in the browser. The start time
+comes from the server, so the count is right after the page has replaced itself with a
+fresh story, and it does not care whether the clock of the browser and the clock of the
+server agree. A brief that is queued rather than written counts the time since the
+request instead. The counter is gone as soon as the brief is there.
 
 ## Configuration
 
