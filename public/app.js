@@ -252,6 +252,61 @@ const leaflet = { promise: null, maps: new WeakMap() };
 // The controls that need JavaScript are hidden until it is there.
 document.documentElement.classList.add('js');
 
+// ---- The timeline ------------------------------------------------------------------
+// The timeline reads from the newest entry backwards, and the reader can flip it to read
+// it from the start. The choice is remembered for the next story.
+const TIMELINE_ORDER_KEY = 'mimir.timeline-order';
+
+function storedTimelineOrder() {
+  try {
+    return localStorage.getItem(TIMELINE_ORDER_KEY) === 'oldest' ? 'oldest' : 'newest';
+  } catch {
+    return 'newest';
+  }
+}
+
+function rememberTimelineOrder(order) {
+  try {
+    localStorage.setItem(TIMELINE_ORDER_KEY, order);
+  } catch {
+    // A browser that does not remember is a browser that does not mind.
+  }
+}
+
+function applyTimelineOrder(list, order) {
+  const entries = Array.from(list.querySelectorAll(':scope > li'));
+  entries.sort((a, b) => Number(a.dataset.order) - Number(b.dataset.order));
+  if (order === 'newest') entries.reverse();
+  for (const entry of entries) list.appendChild(entry);
+  list.dataset.order = order;
+}
+
+function timelineButtonFor(list) {
+  return list.parentElement?.querySelector('[data-timeline-order]') ?? null;
+}
+
+function setTimelineOrder(list, order) {
+  applyTimelineOrder(list, order);
+  const button = timelineButtonFor(list);
+  if (button) button.textContent = order === 'oldest' ? 'Newest first' : 'Oldest first';
+}
+
+for (const list of document.querySelectorAll('.timeline')) {
+  // The order the reader chose, or the one the server rendered with.
+  setTimelineOrder(list, storedTimelineOrder());
+}
+
+document.addEventListener('click', (ev) => {
+  const button = ev.target.closest('[data-timeline-order]');
+  if (!button) return;
+  ev.preventDefault();
+  const list = button.closest('.panel')?.querySelector('.timeline');
+  if (!list) return;
+  const order = list.dataset.order === 'oldest' ? 'newest' : 'oldest';
+  setTimelineOrder(list, order);
+  rememberTimelineOrder(order);
+});
+
 
 function loadLeaflet() {
   if (window.leaflet) return Promise.resolve(window.leaflet);

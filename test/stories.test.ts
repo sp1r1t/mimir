@@ -382,15 +382,24 @@ describe('stories', () => {
     // The supporting-sources list is gone: the timeline carries the numbers.
     expect(document.querySelector('.sources-list')).toBeNull();
     const entries = document.querySelectorAll('.timeline > li');
-    expect(Array.from(entries).map((e) => e.querySelector('.entry-number')!.textContent)).toEqual(['1', '2']);
+    // The newest entry comes first; the number of an entry stays its place in the
+    // story's publish order.
+    expect(Array.from(entries).map((e) => e.querySelector('.entry-number')!.textContent)).toEqual(['2', '1']);
+    expect(document.querySelector('.timeline')!.getAttribute('data-order')).toBe('newest');
+    // The timeline can be flipped to read from the start.
+    const flip = document.querySelector('[data-timeline-order]');
+    expect(flip).not.toBeNull();
+    expect(flip!.textContent).toBe('Oldest first');
     // The citation numbers are the timeline's own.
-    const cites = Array.from(document.querySelectorAll('.summary-panel a.cite')).map((a) => a.textContent);
+    const cites = Array.from(document.querySelectorAll('.summary-panel a.cite'));
     expect(cites.length).toBeGreaterThan(0);
     for (const cite of cites) {
-      const n = Number(cite.replace(/[[\]]/g, ''));
+      const n = Number(cite.textContent!.replace(/[[\]]/g, ''));
       expect(n).toBeGreaterThanOrEqual(1);
       expect(n).toBeLessThanOrEqual(2);
-      expect(document.querySelector(`.timeline > li:nth-child(${n})`)).not.toBeNull();
+      const entry = Array.from(entries).find((e) => e.querySelector('.entry-number')!.textContent === String(n));
+      expect(entry).not.toBeUndefined();
+      expect(cite.getAttribute('href')).toBe(`#${entry!.getAttribute('id')}`);
     }
 
     // A second brief is a new revision that leads with what is new.

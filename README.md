@@ -142,7 +142,9 @@ a key.
 - **Story details:** the Story Intelligence Brief with cited sources and claim status, the
   assessment with the articles behind each score, and a combined article timeline.
   The brief says when it was written, and a rewritten brief leads with what is new since
-  the one before it. Every timeline entry carries its number, and that number is what the
+  the one before it. The timeline starts at the most recent entry; **Oldest first** /
+  **Newest first** flips it, and the reader's choice is remembered for the next story.
+  Every timeline entry carries its number, and that number is what the
   brief's citations refer to. Each timeline entry also shows its role (first report,
   update or additional coverage), discovery feed, original and available discussion
   links, article scores and a Save pill. Relevant / Not relevant controls in the story
@@ -251,7 +253,8 @@ article is new, the section is left out entirely rather than repeated.
 **The numbers.** A citation points at the article it is based on, and the number it
 shows is that article's number in the story's timeline, which is also its publish
 order. The timeline carries the numbers, so there is one list of articles and one
-numbering, not two.
+numbering, not two. The number stays the publish order when the reader flips the
+timeline to read from the start.
 
 - **Automatic:** for stories at or above `SUMMARY_AUTO_MIN_PRIORITY` whose latest
   development is within `SUMMARY_AUTO_MAX_AGE_HOURS`, at most `SUMMARY_AUTO_MAX_PER_DAY`
@@ -347,7 +350,7 @@ that cannot reach one.
 the list of places is server-rendered; only the map itself needs JavaScript. The card
 polls for the answer while a lookup is running and refreshes itself when it is ready.
 The **Full screen** button is only shown when JavaScript is there, because without it
-there is nothing to press.
+there is nothing to press. The same goes for the timeline's order switch.
 
 ## Configuration
 

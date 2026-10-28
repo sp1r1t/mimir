@@ -483,10 +483,17 @@ function matchNote(m: StoryMember, storyId: number): string {
 const ROLE_LABEL: Record<StoryMember['role'], string> = { origin: 'First report', update: 'Update', coverage: 'Coverage' };
 
 function timelinePanel(s: StoryDetail, now: number): SafeHtml {
+  // The newest entry comes first: the reader wants to see what happened last. The
+  // number of an entry is its place in the story's publish order, and stays that way
+  // when the reader flips the order.
+  const numbered = s.members.map((m, i) => ({ member: m, number: i + 1 })).reverse();
   return html`<section class="panel">
-    <h3>Timeline</h3>
-    <ol class="timeline">${s.members.map((m, i) => html`<li id="a-${m.articleId}" class="timeline-entry role-${m.role}">
-      <div class="timeline-meta"><span class="entry-number" aria-label="Article ${i + 1}">${i + 1}</span>
+    <div class="timeline-head">
+      <h3>Timeline</h3>
+      <button type="button" class="timeline-order" data-timeline-order>Oldest first</button>
+    </div>
+    <ol class="timeline" data-order="newest">${numbered.map(({ member: m, number: n }) => html`<li id="a-${m.articleId}" class="timeline-entry role-${m.role}" data-order="${n}">
+      <div class="timeline-meta"><span class="entry-number" aria-label="Article ${n}">${n}</span>
         <span class="when">${timeEl(m.occurredAt, now)}</span>
         <span class="badge role-${m.role}">${ROLE_LABEL[m.role]}</span></div>
       <h4 class="entry-title"><a href="/articles/${m.articleId}">${m.title ?? '(untitled)'}</a></h4>
