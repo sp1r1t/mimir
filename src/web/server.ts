@@ -21,6 +21,7 @@ import { definitionFromForm, profilePage, profileVersionPage } from './pages/pro
 import { sourceDetailPage, sourcesPage } from './pages/sources.js';
 import { statsPage } from './pages/stats.js';
 import { parseStoryFilters, relevantNewCount, resolveStoryQuery, storiesPage, storyPage } from './pages/stories.js';
+import { glossaryPage } from './pages/terms.js';
 
 type Body = Record<string, string | string[] | undefined>;
 type Query = Record<string, string | undefined>;
@@ -298,6 +299,46 @@ export function buildServer(app: App): FastifyInstance {
     const state = app.stories.placesState(id);
     return reply.send({ state: state.state, error: state.error, places: app.stories.places(id) });
   });
+
+  // ---- Terms ----------------------------------------------------------------
+  // The reader asks for the glossary of a story; the terms are then looked up in the
+  // encyclopedia, and a term Mimir already knows is not looked up again.
+
+  const termsHandler = async (req: FastifyRequest, reply: FastifyReply) => {
+    const id = app.stories.resolve(idParam(req));
+    if (id == null) return reply.code(404).send({ error: 'Story not found' });
+    const res = app.storyPipeline.requestTerms(id);
+    if (wantsJson(req)) return reply.code(res.queued ? 202 : 200).send(res);
+    return redirect(reply, `/stories/${id}`, res.message);
+  };
+  server.post('/stories/:id/terms', termsHandler);
+  server.post('/api/stories/:id/terms', termsHandler);
+
+  server.get('/api/stories/:id/terms', async (req, reply) => {
+    const id = app.stories.resolve(idParam(req));
+    if (id == null) return reply.code(404).send({ error: 'Story not found' });
+    const state = app.stories.termsState(id);
+    return reply.send({ state: state.state, error: state.error, terms: app.stories.termsOf(id) });
+  });
+
+  /** One term of the glossary: what the reader sees when a term is tapped. */
+  server.get('/api/terms/:key', async (req, reply) => {
+    const key = decodeURIComponent((req.params as { key: string }).key ?? '');
+    const term = app.stories.termByKey(key);
+    if (!term) return reply.code(404).send({ error: 'Term not found' });
+    return reply.send({
+      key: term.key,
+      name: term.name,
+      kind: term.kind,
+      summary: term.summary,
+      description: term.description,
+      sourceName: term.sourceName,
+      sourceUrl: term.sourceUrl,
+      status: term.status,
+    });
+  });
+
+  server.get('/terms', async (_req, reply) => send(reply, glossaryPage(app)));
 
   server.post('/stories/:id/reassess', async (req, reply) => {
     const id = app.stories.resolve(idParam(req));

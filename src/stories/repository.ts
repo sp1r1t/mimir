@@ -3,6 +3,8 @@ import type { PlaceKind } from '../places/places.js';
 import { toFtsQuery } from '../repo/articles.js';
 import { articleProvenance, type ArticleProvenance } from '../repo/provenance.js';
 import { parseStoredContent, type SummaryArticle, type SummaryStory, type StorySummaryContent, type UsedArticle } from '../summaries/summary.js';
+import type { FoundTerm, GlossaryEntry, TermKind, TermStatus } from '../terms/schema.js';
+import { termKey } from '../terms/schema.js';
 import { iso, systemClock, type Clock } from '../util/time.js';
 import type { AssessmentMember, StoryAssessment } from './assessment.js';
 import type { CandidateJudgement, MatchCandidate, MatchReport } from './matcher.js';
@@ -11,6 +13,20 @@ import { anyTermQuery, contentTerms, publisherOf, titleKey } from './text.js';
 export type StoryRole = 'origin' | 'coverage' | 'update';
 export type SummaryState = 'none' | 'pending' | 'running' | 'ready' | 'stale' | 'failed';
 export type PlacesState = 'none' | 'pending' | 'running' | 'ready' | 'stale' | 'failed';
+export type TermsState = 'none' | 'pending' | 'running' | 'ready' | 'stale' | 'failed';
+
+/** A term of the glossary, with what is known about it. */
+export interface TermRecord extends GlossaryEntry {
+  id: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A term of a story: the glossary's term, and the story's own note about it. */
+export interface StoryTerm extends TermRecord {
+  role: string | null;
+  sources: number[];
+}
 
 /** A place a story is about, with where the gazetteer put it. */
 export interface StoryPlace {
@@ -232,6 +248,9 @@ export interface StoryDetail extends StoryListItem {
   placesState: PlacesState;
   placesError: string | null;
   places: StoryPlace[];
+  termsState: TermsState;
+  termsError: string | null;
+  terms: StoryTerm[];
 }
 
 /** Never marked seen, or a newer meaningful development arrived since it was. */
@@ -488,7 +507,9 @@ export class StoryRepository {
            summary_request = CASE WHEN summary_request = 'failed' THEN 'idle' ELSE summary_request END,
            summary_error = CASE WHEN summary_request = 'failed' THEN NULL ELSE summary_error END,
            places_state = CASE WHEN places_state = 'ready' THEN 'stale' ELSE places_state END,
-           places_error = CASE WHEN places_state = 'failed' THEN NULL ELSE places_error END
+           places_error = CASE WHEN places_state = 'failed' THEN NULL ELSE places_error END,
+           terms_state = CASE WHEN terms_state = 'ready' THEN 'stale' ELSE terms_state END,
+           terms_error = CASE WHEN terms_state = 'failed' THEN NULL ELSE terms_error END
          WHERE id = ?`,
       )
       .run(storyId);
@@ -737,16 +758,17 @@ export class StoryRepository {
     const r = this.db
       .prepare(
         `SELECT s.summary_id AS summaryId, s.summary_request AS summaryRequest, s.summary_stale AS summaryStale,
-                s.places_state AS placesState,
+                s.places_state AS placesState, s.terms_state AS termsState,
                 (SELECT COUNT(*) FROM story_articles WHERE story_id = s.id) AS articles,
                 (SELECT MAX(id) FROM story_summaries WHERE story_id = s.id) AS brief,
                 (SELECT MAX(id) FROM story_places WHERE story_id = s.id) AS places,
+                (SELECT MAX(id) FROM story_terms WHERE story_id = s.id) AS terms,
                 (SELECT MAX(id) FROM story_assessments WHERE story_id = s.id) AS assessment
            FROM stories s WHERE s.id = ?`,
       )
       .get(storyId) as Record<string, unknown> | undefined;
     if (!r) return '';
-    return [r.summaryId, r.summaryRequest, r.summaryStale, r.placesState, r.articles, r.brief, r.places, r.assessment].join('|');
+    return [r.summaryId, r.summaryRequest, r.summaryStale, r.placesState, r.termsState, r.articles, r.brief, r.places, r.terms, r.assessment].join('|');
   }
 
   // ---- Places ------------------------------------------------------------------------
@@ -823,6 +845,150 @@ export class StoryRepository {
              label = excluded.label, display_name = excluded.display_name, osm_id = excluded.osm_id, queried_at = excluded.queried_at`,
       )
       .run(queryKey, g.status, g.lat, g.lon, g.label, g.displayName, g.osmId, this.now());
+  }
+
+  // ---- Terms ------------------------------------------------------------------------
+
+  /** Where the term lookup stands, and what went wrong if something did. */
+  termsState(storyId: number): { state: TermsState; error: string | null } {
+    const r = this.db.prepare('SELECT terms_state AS state, terms_error AS error FROM stories WHERE id = ?').get(storyId) as
+      | { state: TermsState; error: string | null }
+      | undefined;
+    return r ?? { state: 'none', error: null };
+  }
+
+  setTermsState(storyId: number, state: TermsState, error: string | null = null): void {
+    this.db.prepare('UPDATE stories SET terms_state = ?, terms_error = ? WHERE id = ?').run(state, error, storyId);
+  }
+
+  /** After a restart, a lookup that is no longer queued must not look like it is running. */
+  reconcileTermsRequests(kind: string): number {
+    const active = `SELECT 1 FROM jobs j WHERE j.kind = '${kind}' AND j.status IN ('pending', 'running')
+                    AND json_extract(j.payload, '$.storyId') = stories.id`;
+    const a = this.db
+      .prepare(`UPDATE stories SET terms_state = 'pending' WHERE terms_state = 'running' AND EXISTS (${active} AND j.status = 'pending')`)
+      .run().changes;
+    const b = this.db
+      .prepare(`UPDATE stories SET terms_state = 'none' WHERE terms_state IN ('pending', 'running') AND NOT EXISTS (${active})`)
+      .run().changes;
+    return a + b;
+  }
+
+  /**
+   * Remember the terms a story is about. A term keeps the explanation it was given the
+   * first time: the glossary is shared by every story, so a term is explained once and
+   * then reused.
+   */
+  saveTerms(storyId: number, terms: FoundTerm[]): void {
+    this.db.transaction(() => {
+      const now = this.now();
+      const upsert = this.db.prepare(
+        `INSERT INTO terms (term_key, name, kind, wiki, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'pending', ?, ?)
+           ON CONFLICT(term_key) DO UPDATE SET
+             name = excluded.name,
+             kind = excluded.kind,
+             wiki = COALESCE(excluded.wiki, terms.wiki),
+             status = CASE WHEN terms.status = 'unknown' AND excluded.wiki IS NOT NULL AND excluded.wiki <> terms.wiki
+                           THEN 'pending' ELSE terms.status END,
+             updated_at = excluded.updated_at`,
+      );
+      const idOf = this.db.prepare('SELECT id FROM terms WHERE term_key = ?');
+      for (const t of terms) {
+        const key = termKey(t.name);
+        if (!key) continue;
+        upsert.run(key, t.name, t.kind, t.wiki, now, now);
+        const row = idOf.get(key) as { id: number } | undefined;
+        if (!row) continue;
+        this.db
+          .prepare(
+            `INSERT INTO story_terms (story_id, term_id, role, sources, created_at) VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(story_id, term_id) DO UPDATE SET role = excluded.role, sources = excluded.sources`,
+          )
+          .run(storyId, row.id, t.role, JSON.stringify(t.sources), now);
+      }
+    })();
+  }
+
+  /** Give a term its explanation. */
+  explainTerm(
+    key: string,
+    explanation: { summary: string | null; description: string | null; sourceName: string | null; sourceUrl: string | null },
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE terms SET summary = ?, description = ?, source_name = ?, source_url = ?, status = 'explained', updated_at = ?
+           WHERE term_key = ?`,
+      )
+      .run(explanation.summary, explanation.description, explanation.sourceName, explanation.sourceUrl, this.now(), key);
+  }
+
+  /** A term nothing could explain: it is kept, but it has nothing to say yet. */
+  markTermUnknown(key: string): void {
+    this.db.prepare("UPDATE terms SET status = 'unknown', updated_at = ? WHERE term_key = ?").run(this.now(), key);
+  }
+
+  /** The terms of a story, with what the glossary knows about them. */
+  termsOf(storyId: number): StoryTerm[] {
+    const rows = this.db
+      .prepare(
+        `SELECT t.id, t.term_key AS key, t.name, t.kind, t.wiki, t.summary, t.description,
+                t.source_name AS sourceName, t.source_url AS sourceUrl, t.status,
+                t.created_at AS createdAt, t.updated_at AS updatedAt, st.role, st.sources
+           FROM story_terms st JOIN terms t ON t.id = st.term_id
+           WHERE st.story_id = ? ORDER BY t.name`,
+      )
+      .all(storyId) as (Omit<StoryTerm, 'sources'> & { sources: string })[];
+    return rows.map((r) => ({ ...r, sources: JSON.parse(r.sources) }));
+  }
+
+  /** One term of the glossary. */
+  termByKey(key: string): TermRecord | null {
+    const r = this.db
+      .prepare(
+        `SELECT id, term_key AS key, name, kind, wiki, summary, description, source_name AS sourceName,
+                source_url AS sourceUrl, status, created_at AS createdAt, updated_at AS updatedAt
+           FROM terms WHERE term_key = ?`,
+      )
+      .get(key) as TermRecord | undefined;
+    return r ?? null;
+  }
+
+  /** Every term Mimir can explain: the ones the reader may tap in a brief or an article. */
+  glossary(): TermRecord[] {
+    return this.db
+      .prepare(
+        `SELECT id, term_key AS key, name, kind, wiki, summary, description, source_name AS sourceName,
+                source_url AS sourceUrl, status, created_at AS createdAt, updated_at AS updatedAt
+           FROM terms WHERE status = 'explained' ORDER BY name`,
+      )
+      .all() as TermRecord[];
+  }
+
+  /** The glossary, with the number of stories that name each term. */
+  glossaryWithUse(): (TermRecord & { stories: number })[] {
+    return this.db
+      .prepare(
+        `SELECT t.id, t.term_key AS key, t.name, t.kind, t.wiki, t.summary, t.description,
+                t.source_name AS sourceName, t.source_url AS sourceUrl, t.status,
+                t.created_at AS createdAt, t.updated_at AS updatedAt,
+                (SELECT COUNT(*) FROM story_terms st WHERE st.term_id = t.id) AS stories
+           FROM terms t WHERE t.status = 'explained' ORDER BY t.kind, t.name`,
+      )
+      .all() as (TermRecord & { stories: number })[];
+  }
+
+  /** The kinds of term the glossary holds, for the reader who wants to browse it. */
+  glossaryKinds(): { kind: TermKind; count: number }[] {
+    return this.db
+      .prepare('SELECT kind, COUNT(*) AS count FROM terms WHERE status = \'explained\' GROUP BY kind ORDER BY count DESC')
+      .all() as { kind: TermKind; count: number }[];
+  }
+
+  /** A term's status, for the lookup that is still to come. */
+  termStatus(key: string): TermStatus | null {
+    const r = this.db.prepare('SELECT status FROM terms WHERE term_key = ?').get(key) as { status: TermStatus } | undefined;
+    return r?.status ?? null;
   }
 
   /**
@@ -1147,6 +1313,7 @@ export class StoryRepository {
       articleIds: (JSON.parse(r.articles) as { articleId: number }[]).map((a) => a.articleId),
     }));
     const placeState = this.placesState(id);
+    const termState = this.termsState(id);
     return {
       ...this.withPublishers([toListItem(row)])[0]!,
       members,
@@ -1158,6 +1325,9 @@ export class StoryRepository {
       placesState: placeState.state,
       placesError: placeState.error,
       places: this.places(id),
+      termsState: termState.state,
+      termsError: termState.error,
+      terms: this.termsOf(id),
     };
   }
 

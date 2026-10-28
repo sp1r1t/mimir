@@ -80,6 +80,15 @@ const EnvSchema = z.object({
   TILE_URL: z.string().min(1).default('https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
   TILE_ATTRIBUTION: z.string().default('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'),
 
+  TERMS_ENABLED: bool.default(true),
+  TERMS_MAX_ARTICLES: int(12, 1),
+  TERMS_MAX_INPUT_CHARS: int(40000, 2000),
+  TERMS_MAX_OUTPUT_TOKENS: int(4000, 500),
+  WIKIPEDIA_URL: z.string().url().default('https://en.wikipedia.org'),
+  WIKIPEDIA_USER_AGENT: z.string().min(1).default('Mimir/0.1 (self-hosted news reader)'),
+  WIKIPEDIA_TIMEOUT_MS: int(15000, 1000),
+  WIKIPEDIA_MIN_INTERVAL_MS: int(500, 0),
+
   MINIMAX_API_KEY: optionalString,
   MINIMAX_BASE_URL: z.string().url().default('https://api.minimax.io'),
   MINIMAX_QUOTA_URL: z.string().url().default('https://www.minimax.io/v1/token_plan/remains'),
@@ -165,6 +174,18 @@ export interface AppConfig {
     tileUrl: string;
     tileAttribution: string;
     geocoder: {
+      baseUrl: string;
+      userAgent: string;
+      timeoutMs: number;
+      minIntervalMs: number;
+    };
+  };
+  terms: {
+    enabled: boolean;
+    maxArticles: number;
+    maxInputChars: number;
+    maxOutputTokens: number;
+    wikipedia: {
       baseUrl: string;
       userAgent: string;
       timeoutMs: number;
@@ -276,6 +297,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         userAgent: e.GEOCODER_USER_AGENT,
         timeoutMs: e.GEOCODER_TIMEOUT_MS,
         minIntervalMs: e.GEOCODER_MIN_INTERVAL_MS,
+      },
+    },
+    terms: {
+      enabled: e.TERMS_ENABLED,
+      maxArticles: e.TERMS_MAX_ARTICLES,
+      maxInputChars: e.TERMS_MAX_INPUT_CHARS,
+      maxOutputTokens: e.TERMS_MAX_OUTPUT_TOKENS,
+      wikipedia: {
+        baseUrl: e.WIKIPEDIA_URL,
+        userAgent: e.WIKIPEDIA_USER_AGENT,
+        timeoutMs: e.WIKIPEDIA_TIMEOUT_MS,
+        minIntervalMs: e.WIKIPEDIA_MIN_INTERVAL_MS,
       },
     },
     minimax: {

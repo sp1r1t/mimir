@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { parseBriefPlaces, FoundPlaceSchema } from '../places/schema.js';
+import { parseBriefTerms, FoundTermSchema } from '../terms/schema.js';
 import { sha256 } from '../util/hash.js';
 import { truncate } from '../util/text.js';
 
 /** Bump whenever the instructions, input layout, or output schema change. */
-export const SUMMARY_PROMPT_VERSION = 'summary/5';
+export const SUMMARY_PROMPT_VERSION = 'summary/6';
 
 export type TextBasis = 'full_text' | 'partial_text' | 'feed_summary' | 'headline_only';
 
@@ -124,6 +125,7 @@ Structure
 5. "perspectives": material differences between sources, contested claims, and what is uncertain.
 6. "whats_next": known upcoming events, unresolved questions, and developments worth watching.
 7. "places": the places the story is about, so the reader can see where it happened.
+8. "terms": the names the reader may not know, so the reader can look them up.
 
 Places
 The brief and the places come out of the same answer, so name the places in the same breath. They are looked up in a gazetteer afterwards, so give names only and no coordinates.
@@ -135,6 +137,17 @@ The brief and the places come out of the same answer, so name the places in the 
 - "role" is a few words, in ${language}, saying why the place is in the story.
 - Every place cites in "sources" the ids of the articles that name it. Cite only articles that actually contain it.
 - "places" is empty when the articles name no place.
+
+Terms
+The brief and the terms come out of the same answer too. The terms are looked up in an encyclopedia afterwards, and the reader can tap them in the brief.
+- A term is a name the reader would have to stop and ask about: an organisation, a company, a product, a person, a project, a technical concept, or an acronym. Not a place, not a common word, not a description of an event.
+- Prefer the terms that carry the story: the organisation at the centre of it, the product it is about, the project, the concept the story turns on. Do not name every company that appears in passing.
+- "name" is the term as the articles write it.
+- "kind" is one of: organisation, product, person, project, concept, acronym, other.
+- "wiki" is the title of the Wikipedia article about the term, when there is one. Give it when the term has a well-known article, and always when the name alone is ambiguous: "Sandbox" is a pit for children and a place where code runs, so "Sandbox (software development)" is the right title. Leave it empty when you do not know of an article.
+- "role" is a few words, in ${language}, saying what the term is and why it is in the story.
+- Every term cites in "sources" the ids of the articles that name it. Cite only articles that actually contain it.
+- "terms" is empty when the articles name no term worth explaining.
 
 Guidelines
 - Adapt length and structure to the complexity and significance of the story.
@@ -168,9 +181,10 @@ Rules:
   "context_significance": [same item shape],
   "perspectives": [same item shape],
   "whats_next": [same item shape],
-  "places": [{"name": "string", "kind": "city|town|country|region|other", "country": "string", "country_code": "two letters", "query": "string", "role": "string", "sources": [article ids]}]
+  "places": [{"name": "string", "kind": "city|town|country|region|other", "country": "string", "country_code": "two letters", "query": "string", "role": "string", "sources": [article ids]}],
+  "terms": [{"name": "string", "kind": "organisation|product|person|project|concept|acronym|other", "wiki": "string", "role": "string", "sources": [article ids]}]
 }
-Limits: gist 1 to 3 items, new_since up to 5, key_developments up to 6, context_significance up to 4, perspectives up to 5, whats_next up to 4, places up to 12. Target length: 150 to 300 words for a typical brief.`;
+Limits: gist 1 to 3 items, new_since up to 5, key_developments up to 6, context_significance up to 4, perspectives up to 5, whats_next up to 4, places up to 12, terms up to 12. Target length: 150 to 300 words for a typical brief.`;
 }
 
 /** One article as the model sees it: how much of it there is, and that much of its text. */
@@ -285,10 +299,17 @@ const briefShape = {
 export const BriefSchema = z.object(briefShape).strict();
 
 /**
- * A brief as it is kept: the brief and the places that came with it. The places are
- * read leniently, so a malformed one never invalidates the brief it came with.
+ * A brief as it is kept: the brief and the places and the terms that came with it. The
+ * places and the terms are read leniently, so a malformed one never invalidates the
+ * brief it came with.
  */
-export const SummarySchema = z.object({ ...briefShape, places: z.array(FoundPlaceSchema).default([]) }).strict();
+export const SummarySchema = z
+  .object({
+    ...briefShape,
+    places: z.array(FoundPlaceSchema).default([]),
+    terms: z.array(FoundTermSchema).default([]),
+  })
+  .strict();
 
 /** The executive summary that came before the brief. Kept so that old briefs still read. */
 export const LegacySummarySchema = z
@@ -342,10 +363,11 @@ export function parseSummary(text: string, allowedIds: Set<number>): BriefConten
     throw new SummaryValidationError(`Output is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
   }
   const obj = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
-  // The places are read before the brief is checked: a place that does not fit must never
-  // cost the reader the brief it came with.
+  // The places and the terms are read before the brief is checked: a place or a term that
+  // does not fit must never cost the reader the brief it came with.
   const places = parseBriefPlaces(obj.places, allowedIds);
-  const { places: _places, ...brief } = obj;
+  const terms = parseBriefTerms(obj.terms, allowedIds);
+  const { places: _places, terms: _terms, ...brief } = obj;
   const parsed = BriefSchema.safeParse(brief);
   if (!parsed.success) {
     const issues = parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.') || 'value'}: ${i.message}`);
@@ -361,7 +383,7 @@ export function parseSummary(text: string, allowedIds: Set<number>): BriefConten
   if (unknown.size) {
     throw new SummaryValidationError(`Output cites articles that were not provided: ${[...unknown].join(', ')}`);
   }
-  return { ...summary, places };
+  return { ...summary, places, terms };
 }
 
 /** Read a stored brief or executive summary back, whichever it is. */

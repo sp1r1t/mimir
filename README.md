@@ -166,6 +166,12 @@ a key.
   gives the map the whole screen. The places come with the brief; **Find places** looks
   up the ones a brief does not name, **Look again** refreshes them. See **Places and the
   map** below.
+- **Terms:** a name the reader may not know is a button in the brief, the headline and
+  the timeline; tapping it opens a card with a one or two sentence explanation and a
+  link to its source. The story page lists the terms of the story with their
+  explanations, **Explain the terms** looks up the ones a brief does not name, and
+  **Explain again** refreshes them. The **Glossary** page in the navigation lists
+  everything Mimir knows, grouped by kind. See **Terms and the glossary** below.
 - **Articles:** sort by rank, personal relevance, publication or discovery; search title,
   summary, text and author; filter by source, category, relevance range, date,
   processing status, saved state, feedback or article type. Clear filters to see all
@@ -368,6 +374,67 @@ update itself: reload it to see the result. The **Full screen** button is only s
 when JavaScript is there, because without it there is nothing to press. The same goes
 for the timeline's order switch.
 
+## Terms and the glossary
+
+**Terms you can tap.** A name the reader may not know — "Cohere", "Nvidia", "the
+Mormon Trail" — becomes a button in the brief, in the story headline and in the
+timeline. Tapping it opens a small card with the explanation: what the term is, in one
+or two sentences, and a link to the source it came from. The card is built from DOM
+nodes and never from markup, so a term an article brought in cannot inject anything into
+the page. Without JavaScript the button still carries the explanation as its tooltip,
+and the story page lists every term with its explanation in full.
+
+**Mimir's own glossary.** The explanations live in Mimir's database, not in the
+browser: a term is explained once and reused in every story that mentions it. The
+**Glossary** page in the navigation lists everything Mimir knows, grouped by kind
+(organisation, product, person, project, concept, acronym), with the number of stories
+that mention each term.
+
+**Where the names come from.** The brief's answer names the terms as well as writing
+the brief, exactly as it names the places: one model pass over the story's articles
+answers both, so the articles are sent once. The terms are read leniently — a term that
+does not fit is dropped, and one that cites an article the model was not given loses
+that citation, but the brief it came with is never lost. A brief written before this
+change carries no terms, and asking for the terms of such a story runs the separate
+name-reading pass instead, whose prompt is versioned as `terms/1`.
+
+**Where the explanation comes from.** Each term is looked up in Wikipedia first: the
+title the model gave ("Sandbox (software development)" for an ambiguous name), then the
+bare name, then a search whose hits are only accepted when their title carries the
+name. A page that only lists several meanings explains nothing and is not an answer,
+and neither is a redirect to a different thing entirely: "Sandbox" leads to "Sandpit",
+a pit for children, so it is refused — while "Federal Bureau of Investigation", which
+introduces the name it was asked for, is accepted. The explanation is the first two
+sentences of the article, and the source link points at the article itself.
+
+**When Wikipedia does not know.** A term the encyclopedia does not have is explained
+from the articles instead, by a second reading of them: one or two sentences of what
+the term is, written for a reader who does not know it, and marked as coming from
+Mimir rather than from Wikipedia. A term that neither source can explain stays in the
+list, marked "not explained", rather than being filled with a guess. The first
+explanation a term ever gets is never overwritten, so the glossary does not change its
+mind; a term the encyclopedia did not know is only looked up again when a better title
+arrives with it.
+
+**When it runs.** The terms come with the brief, so a brief that names its terms
+brings the glossary along: the lookup starts by itself once the brief is written. A
+story whose brief names no term has no glossary until you ask for one with **Explain
+the terms** on the story page, and **Explain again** does it again. A lookup that is
+already running is not started twice. When a story develops, its terms are marked
+outdated, like its places.
+
+**Cost.** The names are part of the brief's answer, so they cost a few hundred output
+tokens and no second call. Only a brief written before that change needs the separate
+name-reading pass. Wikipedia is free, but the public instance asks for a `User-Agent`
+that identifies the caller and for a request at a time; `WIKIPEDIA_MIN_INTERVAL_MS`
+enforces the gap, and `WIKIPEDIA_USER_AGENT` should say who you are.
+
+**The endpoints.**
+
+- `GET /api/terms/:key` — the explanation of one term, as JSON.
+- `GET /api/stories/:id/terms` — the terms of a story and the state of the lookup.
+- `POST /stories/:id/terms` — asks for the terms of a story to be looked up.
+
 ## Live updates
 
 A story page watches its own story, so that nothing the reader asks for ends in a
@@ -442,6 +509,14 @@ Key settings:
 | `GEOCODER_MIN_INTERVAL_MS` | `1000` | Minimum gap between two gazetteer requests |
 | `TILE_URL` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | Map tiles |
 | `TILE_ATTRIBUTION` | OpenStreetMap contributors | Attribution shown on the map |
+| `TERMS_ENABLED` | `true` | Explain the terms a story uses and keep a glossary |
+| `TERMS_MAX_ARTICLES` | `12` | Articles offered to the term reader |
+| `TERMS_MAX_INPUT_CHARS` | `40000` | Maximum article text sent to the term reader |
+| `TERMS_MAX_OUTPUT_TOKENS` | `4000` | Output token limit of the term reader |
+| `WIKIPEDIA_URL` | `https://en.wikipedia.org` | Encyclopedia the terms are looked up in |
+| `WIKIPEDIA_USER_AGENT` | `Mimir/0.1 (self-hosted news reader)` | How Wikipedia is asked; make it identify you |
+| `WIKIPEDIA_TIMEOUT_MS` | `15000` | Timeout of one Wikipedia request |
+| `WIKIPEDIA_MIN_INTERVAL_MS` | `1000` | Minimum gap between two Wikipedia requests |
 | `LOG_LEVEL` | `info` | JSON log verbosity |
 | `RETENTION_FETCH_LOG_DAYS` | `30` | Fetch-history retention |
 | `RETENTION_JOBS_DAYS` | `14` | Completed-job retention |
@@ -612,6 +687,7 @@ src/jobs/             SQLite queue and bounded workers
 src/profile/          validated profile schema and version repository
 src/stories/          candidate retrieval, Jev story matcher, assessment, story jobs
 src/summaries/        SummaryProvider interface, MiniMax and mock providers, prompt and validation
+src/terms/            term prompt and validation, Wikipedia client, glossary markup
 src/repo/             article/source/feedback/statistics persistence
 src/web/              Fastify routes, server-rendered pages, metrics
 src/pipeline.ts       extraction/classification/recovery coordination
@@ -649,6 +725,8 @@ The JSON API includes `GET /api/articles`, `GET /api/articles/:id`,
 `GET /api/stories/:id`, `GET /api/stories/:id/events` (the live event stream),
 `GET /api/stories/:id/state`, `POST /api/stories/:id/summary` and
 `POST /api/stories/:id/seen`
+and, for the glossary, `GET /api/terms/:key`, `GET /api/stories/:id/terms` and
+`POST /api/stories/:id/terms`
 (body `{ "state": "seen" | "unseen" }`). Story query parameters match the Stories URL
 (`q`, `sort`, `days`, `state`, `category`, `min`, `sig`, `publishers`, `summary`, `seen`
 (`unseen` or `seen`), `page`, `size`); the API applies no default filters.

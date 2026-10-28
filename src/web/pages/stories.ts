@@ -11,6 +11,8 @@ import {
   type StoryPlace,
   type StorySort,
   type SummaryState,
+  type TermsState,
+  type StoryTerm,
 } from '../../stories/repository.js';
 import {
   CLAIM_SECTIONS,
@@ -19,10 +21,12 @@ import {
   type LegacySummaryContent,
   type SummaryClaim,
 } from '../../summaries/summary.js';
+import type { TermKind } from '../../terms/schema.js';
 import { fmtDate, pct, relative, timeEl } from '../format.js';
 import { html, raw, type SafeHtml } from '../html.js';
 import { layout } from '../layout.js';
 import { articleLinks, discoveredVia } from '../provenance.js';
+import { markTerms } from '../terms.js';
 import { feedbackControls, scoreCell, select, activeFilterCount } from './inbox.js';
 
 type Query = Record<string, string | undefined>;
@@ -335,6 +339,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
   const configured = provider.isConfigured();
   const running = s.summaryState === 'running';
   const waiting = s.summaryState === 'pending';
+  const glossary = app.stories.glossary();
   const budget = app.storyPipeline.automaticSummaryBudget();
   const appLimited = waiting && (s.summaryError === 'Daily limit for automatic summaries reached'
     || s.summaryError?.startsWith('Mimir automatic-summary limit reached'));
@@ -375,7 +380,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
   const claims = (title: string, items: SummaryClaim[]) =>
     items.length
       ? html`<h4>${title}</h4><ul class="claims">${items.map(
-          (c) => html`<li><span class="claim-status st-${c.status}" title="${STATUS_LABEL[c.status]}">${STATUS_LABEL[c.status]}</span> ${c.text} ${cite(c.sources, index)}</li>`,
+          (c) => html`<li><span class="claim-status st-${c.status}" title="${STATUS_LABEL[c.status]}">${STATUS_LABEL[c.status]}</span> ${markTerms(c.text, glossary)} ${cite(c.sources, index)}</li>`,
         )}</ul>`
       : null;
   const written = html`<p class="brief-meta">Written ${fmtDate(sum.createdAt)} (${timeEl(sum.createdAt, now)}) &middot; revision ${sum.revision} &middot; ${sum.trigger === 'auto' ? 'written automatically' : 'written on request'}</p>`;
@@ -396,7 +401,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
       <h3>Story Intelligence Brief</h3>
       ${status}
       ${written}
-      <p class="brief-gist">${brief.gist.map((c, i) => html`${i ? ' ' : ''}${c.text} ${cite(c.sources, index)}`)}</p>
+      <p class="brief-gist">${brief.gist.map((c, i) => html`${i ? ' ' : ''}${markTerms(c.text, glossary)} ${cite(c.sources, index)}`)}</p>
       ${claims(newTitle, brief.new_since)}
       ${claims(SECTION_TITLE.key_developments, brief.key_developments)}
       ${claims(SECTION_TITLE.context_significance, brief.context_significance)}
@@ -418,7 +423,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
     ${LEGACY_CLAIM_SECTIONS.map((k) => claims(LEGACY_SECTION_TITLE[k], legacy[k]))}
     ${legacy.uncertainties.length
       ? html`<h4>Uncertainties and open questions</h4><ul class="claims">${legacy.uncertainties.map(
-          (u) => html`<li>${u.text} ${cite(u.sources, index)}</li>`,
+          (u) => html`<li>${markTerms(u.text, glossary)} ${cite(u.sources, index)}</li>`,
         )}</ul>`
       : null}
     ${meta}
@@ -482,10 +487,11 @@ function matchNote(m: StoryMember, storyId: number): string {
 
 const ROLE_LABEL: Record<StoryMember['role'], string> = { origin: 'First report', update: 'Update', coverage: 'Coverage' };
 
-function timelinePanel(s: StoryDetail, now: number): SafeHtml {
+function timelinePanel(app: App, s: StoryDetail, now: number): SafeHtml {
   // The newest entry comes first: the reader wants to see what happened last. The
   // number of an entry is its place in the story's publish order, and stays that way
   // when the reader flips the order.
+  const glossary = app.stories.glossary();
   const numbered = s.members.map((m, i) => ({ member: m, number: i + 1 })).reverse();
   return html`<section class="panel">
     <div class="timeline-head">
@@ -496,7 +502,7 @@ function timelinePanel(s: StoryDetail, now: number): SafeHtml {
       <div class="timeline-meta"><span class="entry-number" aria-label="Article ${n}">${n}</span>
         <span class="when">${timeEl(m.occurredAt, now)}</span>
         <span class="badge role-${m.role}">${ROLE_LABEL[m.role]}</span></div>
-      <h4 class="entry-title"><a href="/articles/${m.articleId}">${m.title ?? '(untitled)'}</a></h4>
+      <h4 class="entry-title"><a href="/articles/${m.articleId}">${markTerms(m.title ?? '(untitled)', glossary)}</a></h4>
       <div class="meta">${discoveredVia(m.provenance, m.sourceName ?? m.publisher)}</div>
       ${articleLinks(m.articleId, m.url, m.provenance)}
       <dl class="article-scores"><div><dt>Relevance</dt><dd>${pct(m.personalRelevance)}</dd></div>
@@ -627,13 +633,84 @@ function mapPanel(app: App, s: StoryDetail, open: boolean): SafeHtml {
   </section>`;
 }
 
+const TERMS_BADGE: Record<TermsState, [string, string] | null> = {
+  none: null,
+  pending: ['pending', 'Terms queued'],
+  running: ['pending', 'Explaining terms'],
+  ready: ['investigate', 'Terms'],
+  stale: ['pending', 'Terms outdated'],
+  failed: ['failed', 'Term lookup failed'],
+};
+
+const TERM_KIND_LABEL: Record<TermKind, string> = {
+  organisation: 'organisation',
+  product: 'product',
+  person: 'person',
+  project: 'project',
+  concept: 'concept',
+  acronym: 'acronym',
+  other: 'term',
+};
+
+/** Where the explanation came from, when it came from a link that is safe to follow. */
+function termSource(t: StoryTerm): { name: string; url: string } | null {
+  if (!t.sourceUrl || !/^https:\/\//i.test(t.sourceUrl)) return null;
+  return { name: t.sourceName ?? 'Source', url: t.sourceUrl };
+}
+
+/**
+ * The glossary of this story: the names the reader may not know, and what they are.
+ * The reader can also tap a term in the brief itself.
+ */
+function termsPanel(s: StoryDetail): SafeHtml {
+  const state = s.termsState;
+  const waiting = state === 'pending' || state === 'running';
+  const index = new Map(s.members.map((m, i) => [m.articleId, i + 1]));
+  const badge = TERMS_BADGE[state];
+  const status =
+    state === 'pending'
+      ? html`<p class="badge-line"><span class="badge pending">Queued</span> <span class="muted">The terms of this story are being looked up.</span></p>`
+      : state === 'running'
+        ? html`<p class="badge-line"><span class="badge pending">Looking</span> <span class="muted">Looking each term up in the encyclopedia.</span></p>`
+        : state === 'failed'
+          ? html`<p class="error-text">The lookup failed: ${s.termsError ?? 'unknown error'}</p>`
+          : state === 'stale'
+            ? html`<p class="badge-line"><span class="badge pending">Outdated</span> <span class="muted">The story has developed since these terms were explained.</span></p>`
+            : null;
+  const action = html`<form method="post" action="/stories/${s.id}/terms" class="inline" data-story-action="terms">
+    <button type="submit" class="secondary" ${waiting ? html`disabled` : null}>${s.terms.length ? 'Explain again' : 'Explain the terms'}</button>
+  </form>`;
+  return html`<section class="panel terms-panel">
+    <h3>Terms</h3>
+    ${badge && !status ? html`<p class="badge-line"><span class="badge ${badge[0]}">${badge[1]}</span></p>` : null}
+    ${status}
+    ${s.terms.length
+      ? html`<ul class="term-list">${s.terms.map((t) => {
+          const source = termSource(t);
+          return html`<li class="term-entry">
+            <span class="term-name">${t.name}</span>
+            <span class="muted small">${TERM_KIND_LABEL[t.kind]}${t.role ? ` · ${t.role}` : ''}</span>
+            ${t.description ? html`<div class="term-desc">${t.description}</div>` : null}
+            ${t.summary ? html`<div class="term-summary">${t.summary}</div>` : null}
+            ${source ? html`<a class="term-source" href="${source.url}" target="_blank" rel="noopener noreferrer">${source.name}</a>` : null}
+            ${t.status === 'unknown' ? html`<span class="muted small">not explained</span>` : null}
+            ${t.sources.length ? cite(t.sources, index) : null}
+          </li>`;
+        })}</ul>`
+      : html`<p class="muted">No term of this story has been explained yet.</p>`}
+    ${s.termsError && state !== 'failed' ? html`<p class="muted small">${s.termsError}</p>` : null}
+    ${action}
+  </section>`;
+}
+
 export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOpen = false): SafeHtml {
   const now = Date.now();
+  const glossary = app.stories.glossary();
   const body = html`
   <article class="detail story-detail" data-story-id="${s.id}" data-version="${app.stories.storyVersion(s.id)}">
     <header>
       ${seenButton(s)}
-      <h1>${s.summary?.content.headline ?? s.headline}</h1>
+      <h1>${markTerms(s.summary?.content.headline ?? s.headline, glossary)}</h1>
       ${s.summary && s.summary.content.headline !== s.headline ? html`<p class="muted">First report: ${s.headline}</p>` : null}
       <div class="meta">
         <span class="source">${plural(s.articleCount, 'article')} &middot; ${plural(s.publisherCount, 'publisher')} &middot; ${plural(s.developmentCount, 'development')}</span>
@@ -647,8 +724,9 @@ export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOp
     </header>
     ${mapPanel(app, s, mapOpen)}
     ${summaryPanel(app, s, now)}
+    ${termsPanel(s)}
     ${assessmentPanel(s, now)}
-    ${timelinePanel(s, now)}
+    ${timelinePanel(app, s, now)}
     ${mergePanel(app, s)}
     ${s.events.length
       ? html`<section class="panel"><h3>Changes</h3><table><tbody>${s.events.map((e) => html`<tr><td>${fmtDate(e.createdAt)}</td><td>${eventText(e)}</td></tr>`)}</tbody></table></section>`

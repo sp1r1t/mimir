@@ -13,6 +13,7 @@ import { silentLogger } from '../src/logger.js';
 import type { Geocoder } from '../src/places/geocoder.js';
 import type { StoryMatcher } from '../src/stories/matcher.js';
 import type { SummaryProvider } from '../src/summaries/provider.js';
+import type { Encyclopedia } from '../src/terms/wikipedia.js';
 import type { Clock } from '../src/util/time.js';
 
 export const FIXTURES = join(import.meta.dirname, 'fixtures');
@@ -56,6 +57,8 @@ export function makeApp(
     matcher?: StoryMatcher;
     summaries?: SummaryProvider;
     places?: SummaryProvider;
+    terms?: SummaryProvider;
+    wikipedia?: Encyclopedia;
     clock?: Clock;
     dir?: string;
   } = {},
@@ -69,6 +72,8 @@ export function makeApp(
     matcher: opts.matcher,
     summaries: opts.summaries,
     places: opts.places,
+    terms: opts.terms,
+    wikipedia: opts.wikipedia,
     clock: opts.clock,
     db: openDatabase(config.dbPath),
   });

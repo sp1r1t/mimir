@@ -7,6 +7,7 @@ import { html, raw, type SafeHtml } from '../html.js';
 import { layout } from '../layout.js';
 import { feedbackControls, statusBadge } from './inbox.js';
 import { articleLinks, discoveredVia } from '../provenance.js';
+import { markTerms, markTermsInHtml } from '../terms.js';
 
 /** Untrusted feed/page HTML → safe markup. Remote images and embeds are dropped (no third-party requests). */
 export function sanitize(input: string): string {
@@ -30,8 +31,8 @@ function contentSummary(a: ArticleDetail): string {
   return `Source: ${a.contentSource.replace(/_/g, ' ')} · extraction: ${a.extractionStatus.replace(/_/g, ' ')}${quality ? ` · ${quality}` : ''}${error}`;
 }
 
-function paragraphs(text: string): SafeHtml {
-  return html`${text.split(/\n{2,}/).map((p) => html`<p>${p}</p>`)}`;
+function paragraphs(text: string, terms: Parameters<typeof markTerms>[1]): SafeHtml {
+  return html`${text.split(/\n{2,}/).map((p) => html`<p>${markTerms(p, terms)}</p>`)}`;
 }
 
 function json(v: unknown): string {
@@ -90,19 +91,21 @@ export function articlePage(app: App, a: ArticleDetail, flash?: string | null): 
   const current = a.classifications.find((c) => c.id === a.classificationId) ?? null;
   const older = a.classifications.filter((c) => c.id !== a.classificationId);
   const story = app.stories.forArticle(a.id);
+  // The terms Mimir knows are marked wherever they turn up, so the reader can tap one.
+  const glossary = app.stories.glossary();
   const content =
     a.contentSource === 'extracted' && a.contentText
-      ? html`<div class="content">${paragraphs(a.contentText)}</div>`
+      ? html`<div class="content">${paragraphs(a.contentText, glossary)}</div>`
       : a.contentHtml
-        ? html`<div class="content">${raw(sanitize(a.contentHtml))}</div>`
+        ? html`<div class="content">${raw(markTermsInHtml(sanitize(a.contentHtml), glossary))}</div>`
         : a.description
-          ? html`<div class="content">${raw(sanitize(a.description))}</div>`
+          ? html`<div class="content">${raw(markTermsInHtml(sanitize(a.description), glossary))}</div>`
           : html`<p class="muted">No content was provided by the feed.</p>`;
 
   const body = html`
   <article class="detail">
     <header>
-      <h1>${a.title ?? '(untitled)'}</h1>
+      <h1>${markTerms(a.title ?? '(untitled)', glossary)}</h1>
       <div class="meta">
         ${discoveredVia(a.provenance, a.sourceName)}
         ${a.author ? html`<span>by ${a.author}</span>` : null}

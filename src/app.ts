@@ -21,6 +21,7 @@ import { StatsRepository } from './repo/stats.js';
 import { JevStoryMatcher, type StoryMatcher } from './stories/matcher.js';
 import { StoryPipeline } from './stories/pipeline.js';
 import { StoryRepository } from './stories/repository.js';
+import { Wikipedia, type Encyclopedia } from './terms/wikipedia.js';
 import { MiniMaxProvider } from './summaries/minimax.js';
 import { MockSummaryProvider } from './summaries/mock.js';
 import { DisabledSummaryProvider, type SummaryProvider } from './summaries/provider.js';
@@ -63,6 +64,8 @@ export function createApp(
     matcher?: StoryMatcher;
     summaries?: SummaryProvider;
     places?: SummaryProvider;
+    terms?: SummaryProvider;
+    wikipedia?: Encyclopedia;
   } = {},
 ): App {
   const clock = overrides.clock ?? systemClock;
@@ -100,11 +103,15 @@ export function createApp(
   // The places are named by the same kind of model as the summaries, so the same
   // provider answers both unless another one is given.
   const places = overrides.places ?? summaries;
+  // The terms are named and explained by the same kind of model as the summaries.
+  const terms = overrides.terms ?? summaries;
   const geocoder = overrides.geocoder ?? new NominatimGeocoder(config.places.geocoder);
+  // The encyclopedia explains the terms; it needs no key, only a request at a time.
+  const wikipedia = overrides.wikipedia ?? new Wikipedia(config.terms.wikipedia);
 
   seed(db, config, sources, profiles, log);
 
-  const storyPipeline = new StoryPipeline({ db, config, queue, stories, profiles, matcher, summaries, places, geocoder, log, clock });
+  const storyPipeline = new StoryPipeline({ db, config, queue, stories, profiles, matcher, summaries, places, geocoder, wikipedia, terms, log, clock });
   const pipeline = new Pipeline({
     db, config, queue, articles, sources, profiles, classifier, extractor, log, clock,
     onClassified: (id) => storyPipeline.onClassified(id),

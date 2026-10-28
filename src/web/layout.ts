@@ -1,7 +1,7 @@
 import type { App } from '../app.js';
 import { html, type SafeHtml } from './html.js';
 
-export type NavKey = 'stories' | 'inbox' | 'saved' | 'review' | 'sources' | 'profile' | 'stats' | 'none';
+export type NavKey = 'stories' | 'inbox' | 'saved' | 'review' | 'sources' | 'glossary' | 'profile' | 'stats' | 'none';
 
 export interface ClassifierStatus {
   state: 'ready' | 'unconfigured' | 'paused';
@@ -38,8 +38,8 @@ export function layout(app: App, opts: { title: string; nav: NavKey; body: SafeH
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${opts.title} · Mimir</title>
-<link rel="stylesheet" href="/static/app.css?v=story-live-1">
-<script src="/static/app.js?v=story-live-1" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=terms-1">
+<script src="/static/app.js?v=terms-1" defer></script>
 </head>
 <body>
 <header class="top">
@@ -49,6 +49,7 @@ export function layout(app: App, opts: { title: string; nav: NavKey; body: SafeH
     ${link('inbox', '/articles', 'Articles')}
     ${link('review', '/articles?sort=rank_asc&status=classified', 'Low scores')}
     ${link('saved', '/articles?saved=1&sort=discovered', 'Saved')}
+    ${link('glossary', '/terms', 'Glossary')}
     ${link('sources', '/sources', 'Sources')}
     ${link('profile', '/profile', 'Profile')}
     ${link('stats', '/stats', 'Stats')}

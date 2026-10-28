@@ -1,17 +1,10 @@
 import { z } from 'zod';
+import { optionalText } from '../util/text.js';
 
 export const PLACE_KINDS = ['city', 'town', 'country', 'region', 'other'] as const;
 export type PlaceKind = (typeof PLACE_KINDS)[number];
 
-/** A field the model may leave empty; an empty string means "not stated". */
-export const optionalText = (max: number) =>
-  z
-    .string()
-    .trim()
-    .max(max)
-    .nullish()
-    .transform((v) => (v ? v : null))
-    .catch(null);
+export { optionalText };
 
 /** A two-letter country code, or nothing when the model left it out or got it wrong. */
 export const countryCode = z

@@ -1,4 +1,5 @@
 import { parseHTML } from 'linkedom';
+import { z } from 'zod';
 
 const BLOCK = new Set([
   'P', 'DIV', 'BR', 'LI', 'UL', 'OL', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'PRE',
@@ -56,3 +57,13 @@ export function truncate(s: string, max: number): string {
   const lastSpace = cut.lastIndexOf(' ');
   return `${cut.slice(0, lastSpace > max * 0.8 ? lastSpace : max)}…`;
 }
+
+/** A field the model may leave empty; an empty string means "not stated". */
+export const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullish()
+    .transform((v) => (v ? v : null))
+    .catch(null);

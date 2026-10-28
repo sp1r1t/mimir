@@ -658,3 +658,111 @@ document.addEventListener('submit', async (ev) => {
     if (button) button.disabled = false;
   }
 });
+
+// ---- Terms -------------------------------------------------------------------------
+// A term in a brief or in an article can be tapped. The page asks the server what the
+// term is, and shows the answer in a small card. The card is built from DOM nodes, so
+// nothing that came out of the encyclopedia is ever treated as markup.
+
+const termCache = new Map();
+let termCard = null;
+let termAnchor = null;
+
+async function termExplanation(key) {
+  if (termCache.has(key)) return termCache.get(key);
+  const res = await fetch(`/api/terms/${encodeURIComponent(key)}`, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error('This term is not in the glossary yet.');
+  const body = await res.json();
+  termCache.set(key, body);
+  return body;
+}
+
+function closeTermCard() {
+  if (termCard) termCard.remove();
+  termCard = null;
+  if (termAnchor) termAnchor.setAttribute('aria-expanded', 'false');
+  termAnchor = null;
+}
+
+/** Put the card under the term, and keep it inside the window. */
+function placeTermCard(button, card) {
+  const rect = button.getBoundingClientRect();
+  const width = Math.min(320, window.innerWidth - 16);
+  card.style.width = `${width}px`;
+  const height = card.offsetHeight;
+  let left = rect.left;
+  let top = rect.bottom + 6;
+  if (left + width > window.innerWidth - 8) left = window.innerWidth - width - 8;
+  if (left < 8) left = 8;
+  if (top + height > window.innerHeight - 8) {
+    const above = rect.top - height - 6;
+    top = above >= 8 ? above : Math.max(8, window.innerHeight - height - 8);
+  }
+  card.style.left = `${left}px`;
+  card.style.top = `${top}px`;
+}
+
+function showTermCard(button, term) {
+  closeTermCard();
+  const card = document.createElement('div');
+  card.className = 'term-card';
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-label', term.name);
+
+  const name = document.createElement('strong');
+  name.className = 'term-card-name';
+  name.textContent = term.name;
+  card.appendChild(name);
+
+  if (term.description) {
+    const desc = document.createElement('span');
+    desc.className = 'term-card-desc';
+    desc.textContent = term.description;
+    card.appendChild(desc);
+  }
+  if (term.summary && term.summary !== term.description) {
+    const text = document.createElement('span');
+    text.className = 'term-card-text';
+    text.textContent = term.summary;
+    card.appendChild(text);
+  }
+  if (term.sourceUrl && term.sourceUrl.startsWith('https://')) {
+    const link = document.createElement('a');
+    link.className = 'term-card-source';
+    link.href = term.sourceUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = term.sourceName || 'Source';
+    card.appendChild(link);
+  }
+  document.body.appendChild(card);
+  termCard = card;
+  termAnchor = button;
+  button.setAttribute('aria-expanded', 'true');
+  placeTermCard(button, card);
+}
+
+document.addEventListener('click', (ev) => {
+  const target = ev.target instanceof Element ? ev.target : null;
+  const term = target?.closest('.term[data-term-key]');
+  if (term) {
+    ev.preventDefault();
+    if (termAnchor === term) {
+      closeTermCard();
+      return;
+    }
+    const key = term.getAttribute('data-term-key') || '';
+    termExplanation(key)
+      .then((t) => showTermCard(term, t))
+      .catch((err) => showNotice(err.message, true));
+    return;
+  }
+  if (termCard && !target?.closest('.term-card')) closeTermCard();
+});
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && termCard) closeTermCard();
+});
+
+window.addEventListener('scroll', () => closeTermCard(), { capture: true, passive: true });
+window.addEventListener('resize', () => closeTermCard());

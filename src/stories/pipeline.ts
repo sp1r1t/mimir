@@ -10,6 +10,9 @@ import { CircuitBreaker } from '../pipeline.js';
 import type { ProfileRepository } from '../profile/repository.js';
 import { SummaryProviderError, type SummaryProvider, type SummaryTrigger } from '../summaries/provider.js';
 import { gistTexts, isBrief, parseSummary, preparePrompt, selectArticles, SUMMARY_PROMPT_VERSION, SummaryValidationError, type BriefContent } from '../summaries/summary.js';
+import { termKey, type FoundTerm, type TermKind } from '../terms/schema.js';
+import { firstSentences, parseExplanations, parseTerms, prepareExplainPrompt, prepareTermsPrompt, TermsValidationError } from '../terms/terms.js';
+import type { Encyclopedia } from '../terms/wikipedia.js';
 import { backoffMs, sleep } from '../util/backoff.js';
 import { iso, systemClock, type Clock } from '../util/time.js';
 import { assessStory, priorityAt } from './assessment.js';
@@ -20,6 +23,7 @@ export const STORY_MATCH = 'story_match';
 export const STORY_ASSESS = 'story_assess';
 export const STORY_SUMMARY = 'story_summary';
 export const STORY_PLACES = 'story_places';
+export const STORY_TERMS = 'story_terms';
 
 interface MatchPayload {
   articleId: number;
@@ -33,6 +37,11 @@ interface SummaryPayload {
   force?: boolean;
 }
 interface PlacesPayload {
+  storyId: number;
+  trigger: SummaryTrigger;
+  force?: boolean;
+}
+interface TermsPayload {
   storyId: number;
   trigger: SummaryTrigger;
   force?: boolean;
@@ -52,6 +61,10 @@ export interface StoryPipelineDeps {
   /** The backend that names the places of a story; the same one the summaries use. */
   places: SummaryProvider;
   geocoder: Geocoder;
+  /** The encyclopedia that explains the terms of a story. */
+  wikipedia: Encyclopedia;
+  /** The backend that names and explains the terms of a story; the same one the summaries use. */
+  terms: SummaryProvider;
   log: Logger;
   clock?: Clock;
 }
@@ -59,8 +72,9 @@ export interface StoryPipelineDeps {
 /**
  * Story processing as persistent jobs, independent of ingestion:
  * matching assigns each article to a story, assessment derives story-level signals,
- * summary jobs generate executive summaries within the provider's allowance, and place
- * jobs name the places a story is about and look them up in the gazetteer.
+ * summary jobs generate executive summaries within the provider's allowance, place
+ * jobs name the places a story is about and look them up in the gazetteer, and term
+ * jobs explain the names a story uses that the reader may not know.
  */
 export class StoryPipeline {
   readonly matchBreaker = new CircuitBreaker();
@@ -69,6 +83,7 @@ export class StoryPipeline {
   readonly assessWorker: JobWorker<AssessPayload>;
   readonly summaryWorker: JobWorker<SummaryPayload>;
   readonly placesWorker: JobWorker<PlacesPayload>;
+  readonly termsWorker: JobWorker<TermsPayload>;
   private readonly clock: Clock;
   private reconcileTimer: NodeJS.Timeout | null = null;
 
@@ -132,6 +147,22 @@ export class StoryPipeline {
       },
       d.log.child({ worker: STORY_PLACES }),
     );
+    this.termsWorker = new JobWorker<TermsPayload>(
+      d.queue,
+      {
+        kind: STORY_TERMS,
+        concurrency: 1,
+        pollMs: d.config.jobs.pollMs,
+        handler: (job, signal) => this.handleTerms(job, signal),
+        pausedReason: () => this.termsPausedReason(),
+        backoff: (attempt) => backoffMs(attempt, 60_000, 30 * 60_000),
+        onFinalFailure: (job, error) => {
+          const id = d.stories.resolve(job.payload.storyId);
+          if (id) d.stories.setTermsState(id, 'failed', error);
+        },
+      },
+      d.log.child({ worker: STORY_TERMS }),
+    );
   }
 
   start(): void {
@@ -140,6 +171,7 @@ export class StoryPipeline {
     this.assessWorker.start();
     this.summaryWorker.start();
     this.placesWorker.start();
+    this.termsWorker.start();
     this.reconcileTimer = setInterval(() => this.reconcile(), this.d.config.jobs.reconcileIntervalMs);
     this.reconcileTimer.unref();
     if (this.d.summaries.isConfigured()) void this.checkProvider();
@@ -159,7 +191,13 @@ export class StoryPipeline {
 
   async stop(): Promise<void> {
     if (this.reconcileTimer) clearInterval(this.reconcileTimer);
-    await Promise.all([this.matchWorker.stop(), this.assessWorker.stop(), this.summaryWorker.stop(), this.placesWorker.stop()]);
+    await Promise.all([
+      this.matchWorker.stop(),
+      this.assessWorker.stop(),
+      this.summaryWorker.stop(),
+      this.placesWorker.stop(),
+      this.termsWorker.stop(),
+    ]);
   }
 
   notify(): void {
@@ -167,6 +205,7 @@ export class StoryPipeline {
     this.assessWorker.notify();
     this.summaryWorker.notify();
     this.placesWorker.notify();
+    this.termsWorker.notify();
   }
 
   /** Failed jobs were re-queued: lift circuit-breaker pauses and align summary states. */
@@ -175,6 +214,7 @@ export class StoryPipeline {
     this.summaryBreaker.success();
     this.d.stories.reconcileSummaryRequests(STORY_SUMMARY);
     this.d.stories.reconcilePlacesRequests(STORY_PLACES);
+    this.d.stories.reconcileTermsRequests(STORY_TERMS);
     this.notify();
   }
 
@@ -188,6 +228,13 @@ export class StoryPipeline {
     // The gazetteer needs no model: a brief that names its places can be looked up even
     // when no provider for naming them is configured.
     if (!this.d.config.places.enabled) return 'place lookup is turned off';
+    return null;
+  }
+
+  termsPausedReason(): string | null {
+    // The encyclopedia needs no model either: a brief that names its terms can be
+    // explained even when no provider for naming them is configured.
+    if (!this.d.config.terms.enabled) return 'term lookup is turned off';
     return null;
   }
 
@@ -248,8 +295,28 @@ export class StoryPipeline {
     return { queued: true, message: 'Looking for the places of this story.' };
   }
 
-  merge(sourceId: number, targetId: number): void {
-    this.d.stories.merge(sourceId, targetId);
+  /** The reader asked for the glossary: name the terms of this story and explain them. */
+  requestTerms(storyId: number): { queued: boolean; message: string } {
+    const s = this.d.stories.item(storyId);
+    if (!s || s.status !== 'active') return { queued: false, message: 'Story not found.' };
+    if (!this.d.config.terms.enabled) return { queued: false, message: 'Term lookup is turned off.' };
+    // A brief that names its terms needs no model; only a brief from before that
+    // change has to be asked again.
+    if (!this.termsFromBrief(storyId) && !this.d.terms.isConfigured()) {
+      return { queued: false, message: this.d.summaries.configurationHint() ?? 'No summary provider configured.' };
+    }
+    const payload: TermsPayload = { storyId, trigger: 'manual', force: true };
+    const key = `story:${storyId}`;
+    const opts = { priority: MANUAL_PRIORITY, maxAttempts: this.d.config.summaries.maxAttempts };
+    if (!this.d.queue.enqueue(STORY_TERMS, key, payload, opts) && !this.d.queue.promote(STORY_TERMS, key, MANUAL_PRIORITY, payload)) {
+      return { queued: false, message: 'The terms of this story are already being looked up.' };
+    }
+    this.d.stories.setTermsState(storyId, 'pending');
+    this.termsWorker.notify();
+    return { queued: true, message: 'Looking for the terms of this story.' };
+  }
+
+  merge(sourceId: number, targetId: number): void {    this.d.stories.merge(sourceId, targetId);
     this.enqueueAssess(targetId, 20);
   }
 
@@ -280,6 +347,8 @@ export class StoryPipeline {
       if (fixed) this.d.log.info({ fixed }, 'repaired summary request states');
       const fixedPlaces = this.d.stories.reconcilePlacesRequests(STORY_PLACES);
       if (fixedPlaces) this.d.log.info({ fixed: fixedPlaces }, 'repaired place request states');
+      const fixedTerms = this.d.stories.reconcileTermsRequests(STORY_TERMS);
+      if (fixedTerms) this.d.log.info({ fixed: fixedTerms }, 'repaired term request states');
       // Eligibility also changes without new articles (provider configured, capacity restored, budget reset).
       const cfg = this.d.config.summaries;
       if (cfg.autoEnabled && this.d.summaries.isConfigured()) {
@@ -522,6 +591,8 @@ export class StoryPipeline {
     // The brief named the places. The gazetteer is free, so the map is filled from them
     // without asking the model a second time.
     if (content.places.length) this.enqueuePlaces(storyId, trigger);
+    // The brief named the terms too. The encyclopedia is free as well.
+    if (content.terms.length) this.enqueueTerms(storyId, trigger);
   }
 
   /** Queue the gazetteer lookup for the places a brief named. */
@@ -534,6 +605,17 @@ export class StoryPipeline {
     if (!this.d.queue.enqueue(STORY_PLACES, `story:${storyId}`, payload, opts)) return;
     this.d.stories.setPlacesState(storyId, 'pending');
     this.placesWorker.notify();
+  }
+
+  /** Queue the glossary lookup for the terms a brief named. */
+  private enqueueTerms(storyId: number, trigger: SummaryTrigger): void {
+    if (!this.d.config.terms.enabled) return;
+    const payload: TermsPayload = { storyId, trigger };
+    const priority = trigger === 'manual' ? MANUAL_PRIORITY : 10;
+    const opts = { priority, maxAttempts: this.d.config.summaries.maxAttempts };
+    if (!this.d.queue.enqueue(STORY_TERMS, `story:${storyId}`, payload, opts)) return;
+    this.d.stories.setTermsState(storyId, 'pending');
+    this.termsWorker.notify();
   }
 
   // ---- Places -------------------------------------------------------------------------
@@ -659,6 +741,185 @@ export class StoryPipeline {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         return await this.d.geocoder.lookup(place);
+      } catch (err) {
+        lastError = err;
+        if (attempt < 3) await sleep(2000 * attempt);
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  // ---- Terms -------------------------------------------------------------------------
+
+  /**
+   * Explain the terms of the story. The names come from the brief when it names them;
+   * only a brief written before that needs a separate pass to name them. A term is
+   * looked up in the encyclopedia, and one the encyclopedia does not know is explained
+   * from the articles instead.
+   */
+  private async handleTerms(job: Job<TermsPayload>, signal: AbortSignal): Promise<void> {
+    const st = this.d.stories;
+    const storyId = st.resolve(job.payload.storyId);
+    if (storyId == null) return;
+    const cfg = this.d.config.terms;
+    if (!cfg.enabled) return st.setTermsState(storyId, 'none');
+
+    let named = this.termsFromBrief(storyId);
+    if (!named.length) {
+      const asked = await this.nameTerms(storyId, signal);
+      if (!asked) return;
+      named = asked;
+    }
+
+    st.setTermsState(storyId, 'running');
+    // The terms are filed in the glossary first: a term Mimir already knows is not looked
+    // up again, and the reader can tap it in this story straight away.
+    st.saveTerms(storyId, named);
+
+    const unknown: { name: string; kind: TermKind; key: string }[] = [];
+    for (const t of st.termsOf(storyId)) {
+      // Only a term that is still waiting is looked up: one that is explained is done,
+      // and one the encyclopedia did not know is not asked again unless a better title
+      // came with it.
+      if (t.status !== 'pending') continue;
+      const article = await this.lookupTerm(t.name, t.wiki);
+      if (article) {
+        st.explainTerm(t.key, {
+          summary: firstSentences(article.extract ?? article.description ?? '', 2),
+          description: article.description,
+          sourceName: 'Wikipedia',
+          sourceUrl: article.url,
+        });
+      } else {
+        unknown.push({ name: t.name, kind: t.kind, key: t.key });
+      }
+    }
+
+    if (unknown.length) {
+      const { explained, reason } = await this.explainTerms(storyId, unknown, signal);
+      for (const e of explained) {
+        st.explainTerm(e.key, {
+          summary: e.explanation,
+          description: null,
+          sourceName: 'Mimir, from the articles',
+          sourceUrl: null,
+        });
+      }
+      const left = unknown.filter((u) => !explained.some((e) => e.key === u.key));
+      for (const u of left) st.markTermUnknown(u.key);
+      if (left.length) {
+        st.setTermsState(storyId, 'ready', `${left.map((u) => u.name).join(', ')}: ${reason ?? 'the encyclopedia does not know them'}.`);
+        return;
+      }
+    }
+    st.setTermsState(storyId, 'ready');
+  }
+
+  /** The terms the current brief names, if it names any. */
+  private termsFromBrief(storyId: number): FoundTerm[] {
+    const current = this.d.stories.currentSummary(storyId);
+    if (!current) return [];
+    const content = current.content;
+    return isBrief(content) ? content.terms : [];
+  }
+
+  /**
+   * Ask the model to name the terms, for a brief that does not name them itself: a
+   * brief written before the brief and the terms came out of one answer.
+   */
+  private async nameTerms(storyId: number, signal: AbortSignal): Promise<FoundTerm[] | null> {
+    const st = this.d.stories;
+    const cfg = this.d.config.terms;
+    const input = st.summaryInput(storyId);
+    if (!input || !input.articles.length) {
+      st.setTermsState(storyId, 'none');
+      return null;
+    }
+    const selected = selectArticles(input.articles, cfg.maxArticles);
+    const prompt = prepareTermsPrompt(input.story, selected, {
+      maxInputChars: cfg.maxInputChars,
+      language: this.d.config.summaries.language,
+    });
+
+    const provider = this.d.terms;
+    if (!provider.isConfigured()) {
+      st.setTermsState(storyId, 'failed', provider.configurationHint() ?? 'No term provider configured.');
+      return null;
+    }
+    const capacity = await provider.capacity('manual', signal);
+    if (!capacity.ok) {
+      st.setTermsState(storyId, 'pending', capacity.reason);
+      const until = capacity.retryAt ? Math.max(60_000, Date.parse(capacity.retryAt) - Date.now()) : 15 * 60_000;
+      throw new JobError(capacity.reason, { retryable: true, defer: true, delayMs: until });
+    }
+
+    st.setTermsState(storyId, 'running');
+    let result;
+    try {
+      result = await provider.generate({ system: prompt.system, user: prompt.user, maxOutputTokens: cfg.maxOutputTokens }, signal);
+    } catch (err) {
+      if (signal.aborted) throw err;
+      const e = err instanceof SummaryProviderError ? err : new SummaryProviderError(err instanceof Error ? err.message : String(err), 'unavailable');
+      st.setTermsState(storyId, 'pending', e.message);
+      throw new JobError(e.message, { retryable: true, delayMs: e.retryAfterMs ?? undefined });
+    }
+
+    try {
+      return parseTerms(result.text, new Set(selected.map((a) => a.id)));
+    } catch (err) {
+      if (!(err instanceof TermsValidationError)) throw err;
+      st.setTermsState(storyId, 'pending', err.message);
+      throw new JobError(err.message, { retryable: true });
+    }
+  }
+
+  /**
+   * Explain the terms the encyclopedia does not know, from the articles themselves.
+   * Without a model there is nobody to explain them, and the terms stay unexplained
+   * rather than being filled with a guess.
+   */
+  private async explainTerms(
+    storyId: number,
+    terms: { name: string; kind: TermKind; key: string }[],
+    signal: AbortSignal,
+  ): Promise<{ explained: { key: string; explanation: string }[]; reason: string | null }> {
+    const st = this.d.stories;
+    const cfg = this.d.config.terms;
+    const provider = this.d.terms;
+    if (!provider.isConfigured()) return { explained: [], reason: 'no model is configured to explain them' };
+    const input = st.summaryInput(storyId);
+    if (!input || !input.articles.length) return { explained: [], reason: 'the story has no articles to explain them from' };
+    const selected = selectArticles(input.articles, cfg.maxArticles);
+    const prompt = prepareExplainPrompt(
+      input.story,
+      selected,
+      terms.map((t) => ({ name: t.name, kind: t.kind })),
+      { maxInputChars: cfg.maxInputChars, language: this.d.config.summaries.language },
+    );
+
+    const capacity = await provider.capacity('manual', signal);
+    if (!capacity.ok) {
+      const until = capacity.retryAt ? Math.max(60_000, Date.parse(capacity.retryAt) - Date.now()) : 15 * 60_000;
+      throw new JobError(capacity.reason, { retryable: true, defer: true, delayMs: until });
+    }
+    let result;
+    try {
+      result = await provider.generate({ system: prompt.system, user: prompt.user, maxOutputTokens: cfg.maxOutputTokens }, signal);
+    } catch (err) {
+      if (signal.aborted) throw err;
+      const e = err instanceof SummaryProviderError ? err : new SummaryProviderError(err instanceof Error ? err.message : String(err), 'unavailable');
+      throw new JobError(e.message, { retryable: true, delayMs: e.retryAfterMs ?? undefined });
+    }
+    const parsed = parseExplanations(result.text);
+    return { explained: parsed.map((p) => ({ key: termKey(p.name), explanation: p.explanation })), reason: null };
+  }
+
+  /** The encyclopedia gets three tries: it is a public service and it says so. */
+  private async lookupTerm(name: string, wiki: string | null) {
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        return await this.d.wikipedia.lookup(name, wiki);
       } catch (err) {
         lastError = err;
         if (attempt < 3) await sleep(2000 * attempt);
