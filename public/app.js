@@ -24,6 +24,7 @@ document.addEventListener('submit', async (ev) => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const { state } = await res.json();
     render(form, state);
+    if (form.classList.contains('story-save')) syncSaved(form, state);
     button.classList.remove('err');
   } catch (err) {
     const message = `Could not save feedback: ${err.message}`;
@@ -97,10 +98,24 @@ function removeCard(card, filter) {
     if (!list.querySelector('article.card')) {
       list.innerHTML = filter === 'unseen'
         ? '<p class="empty">You\'re all caught up. <a href="/?view=all">Browse all stories</a></p>'
-        : '<p class="empty">No stories marked as seen.</p>';
+        : filter === 'saved'
+          ? '<p class="empty">No stories saved yet. Tap the star on a story to keep it here.</p>'
+          : '<p class="empty">No stories marked as seen.</p>';
     }
   }, 200);
   next?.querySelector('.seen-btn')?.focus();
+}
+
+// A story that is let go while the list shows only saved stories leaves the list.
+function syncSaved(form, state) {
+  const tabCount = document.querySelector('[data-qv-count="saved"]');
+  if (tabCount) {
+    const n = Math.max(0, Number(tabCount.textContent) + (state.savedAt ? 1 : -1));
+    tabCount.textContent = String(n);
+  }
+  const card = form.closest('article.card');
+  const filter = document.querySelector('.list[data-saved-filter]')?.dataset.savedFilter;
+  if (card && filter === 'saved' && !state.savedAt) removeCard(card, 'saved');
 }
 
 function render(form, state) {
@@ -117,6 +132,12 @@ function render(form, state) {
       b.querySelector('.fb-icon').textContent = on ? '★' : '☆';
       b.querySelector('.fb-label').textContent = on ? 'Saved' : 'Save';
       b.setAttribute('aria-label', on ? 'Saved' : 'Save');
+      const help = b.dataset[on ? 'helpSaved' : 'helpUnsaved'];
+      if (help) {
+        b.dataset.help = help;
+        // A compact button shows its meaning on a long press, so it keeps no title.
+        if (b.hasAttribute('title')) b.title = help;
+      }
     }
   }
 }

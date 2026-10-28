@@ -50,6 +50,7 @@ export function parseStoryFilters(q: Query): StoryFilters {
     state: q.state === 'new' || q.state === 'developing' ? q.state : undefined,
     summary: (['ready', 'stale', 'none', 'pending', 'failed'] as const).find((s) => s === q.summary),
     seen: q.seen === 'unseen' || q.seen === 'seen' ? q.seen : undefined,
+    saved: q.saved === 'saved' || q.saved === 'unsaved' ? q.saved : undefined,
     sort: STORY_SORTS.includes(q.sort as StorySort) ? (q.sort as StorySort) : undefined,
     page: num(q.page),
     pageSize: num(q.size) ?? 30,
@@ -59,6 +60,7 @@ export function parseStoryFilters(q: Query): StoryFilters {
 /** Quick views: each is a plain set of filter parameters, so the filter box shows and adjusts it. */
 export const RELEVANT_NEW: Query = { min: '70', sort: 'latest', seen: 'unseen', days: '7' };
 export const SEEN_VIEW: Query = { seen: 'seen', sort: 'latest' };
+export const SAVED_VIEW: Query = { saved: 'saved', sort: 'latest' };
 const NON_FILTER_KEYS = new Set(['page', 'size', 'flash', 'view']);
 
 function filterEntries(q: Query): [string, string][] {
@@ -71,11 +73,12 @@ export function resolveStoryQuery(q: Query): Query {
   return { ...q, ...RELEVANT_NEW };
 }
 
-function activeView(q: Query): 'relevant' | 'all' | 'seen' | null {
+function activeView(q: Query): 'relevant' | 'all' | 'seen' | 'saved' | null {
   const entries = filterEntries(q);
   const matches = (preset: Query) => entries.length === Object.keys(preset).length && entries.every(([k, v]) => preset[k] === v);
   if (matches(RELEVANT_NEW)) return 'relevant';
   if (matches(SEEN_VIEW)) return 'seen';
+  if (matches(SAVED_VIEW)) return 'saved';
   return entries.length === 0 && q.view === 'all' ? 'all' : null;
 }
 
@@ -100,11 +103,30 @@ function storyFeedback(s: StoryDetail): SafeHtml {
     const active = s.relevanceLabel === type;
     const help = `Mark this story as ${label.toLowerCase()} to you. Tap again to clear.`;
     return html`<button type="submit" name="type" value="${active ? 'clear_relevance' : type}" class="fb ${active ? 'on' : ''}"
-      data-type="${type}" data-clear="clear_relevance" data-help="${help}" title="${help}" aria-label="${label}" aria-pressed="${active}">
+      data-type="${type}" data-clear="clear_relevance" data-help="${help}" title="${help}" aria-label="${label}" aria-pressed="${active ? 'true' : 'false'}">
       <span class="fb-icon" aria-hidden="true">${icon}</span><span class="fb-label">${label}</span></button>`;
   };
   return html`<form class="feedback feedback-compact story-feedback" method="post" action="/stories/${s.id}/feedback" data-story="${s.id}" aria-label="Story relevance">
     ${button('relevant', '✓', 'Relevant')}${button('not_relevant', '✗', 'Not relevant')}
+  </form>`;
+}
+
+/**
+ * The star that keeps a story with the reader. The same button works on a card and on the
+ * story page; the label is only shown where there is room for it.
+ */
+const SAVED_HELP = 'Saved. Tap to let it go.';
+const UNSAVED_HELP = 'Save this story so you can find it again.';
+
+function storySave(s: Pick<StoryListItem, 'id' | 'savedAt'>, labelled = false): SafeHtml {
+  const saved = !!s.savedAt;
+  const help = saved ? SAVED_HELP : UNSAVED_HELP;
+  return html`<form class="feedback feedback-compact story-save ${labelled ? 'labelled' : ''}" method="post" action="/stories/${s.id}/save"
+    data-story="${s.id}" aria-label="Save story">
+    <button type="submit" name="type" value="${saved ? 'unsave' : 'save'}" class="fb ${saved ? 'on' : ''}"
+      data-type="save" data-clear="unsave" data-help="${help}" data-help-saved="${SAVED_HELP}" data-help-unsaved="${UNSAVED_HELP}"
+      title="${help}" aria-label="${saved ? 'Saved' : 'Save'}" aria-pressed="${saved ? 'true' : 'false'}">
+      <span class="fb-icon" aria-hidden="true">${saved ? '★' : '☆'}</span><span class="fb-label">${saved ? 'Saved' : 'Save'}</span></button>
   </form>`;
 }
 
@@ -178,6 +200,7 @@ function storyCard(s: StoryListItem, now: number, topics: TopicImportance): Safe
     <div class="card-main">
       <h2><a href="/stories/${s.id}">${s.summaryHeadline ?? s.headline}</a></h2>
       <div class="meta">
+        ${storySave(s)}
         <span title="Earliest publication in this story">First reported ${timeEl(s.firstPublishedAt, now)}</span>
         ${s.developmentCount > 1 ? html`<span title="Publication of the latest meaningful update">Updated ${timeEl(s.latestDevelopmentAt, now)}</span>` : null}
         ${s.latestPublishedAt !== s.latestDevelopmentAt ? html`<span title="Most recent article in this story">Latest coverage ${timeEl(s.latestPublishedAt, now)}</span>` : null}
@@ -231,6 +254,11 @@ export function storiesPage(app: App, query: Query, flash?: string | null): Safe
       ['unseen', 'Unseen or updated'],
       ['seen', 'Seen'],
     ])}</div>
+    <div class="field"><label for="f-saved">Saved</label>${select('saved', query.saved, [
+      ['', 'Any'],
+      ['saved', 'Saved'],
+      ['unsaved', 'Not saved'],
+    ])}</div>
     <div class="field"><label for="f-state">Status</label>${select('state', query.state, [
       ['', 'Any'],
       ['new', 'New'],
@@ -261,13 +289,14 @@ export function storiesPage(app: App, query: Query, flash?: string | null): Safe
 
   const topics = topicImportance(app);
   const view = activeView(query);
-  const tab = (key: 'relevant' | 'all' | 'seen', href: string, label: string, count?: number) =>
+  const tab = (key: 'relevant' | 'all' | 'seen' | 'saved', href: string, label: string, count?: number) =>
     html`<a href="${href}" class="qv ${view === key ? 'active' : ''}" ${view === key ? html`aria-current="page"` : null}>${label}${count != null ? html` <span class="count" data-qv-count="${key}">${count}</span>` : null}</a>`;
   const body = html`
     <nav class="quick-views" aria-label="Quick views">
       ${tab('relevant', '/', 'Relevant new', relevantNewCount(app))}
       ${tab('all', '/?view=all', 'All stories')}
       ${tab('seen', `/?${new URLSearchParams(SEEN_VIEW as Record<string, string>)}`, 'Seen')}
+      ${tab('saved', `/?${new URLSearchParams(SAVED_VIEW as Record<string, string>)}`, 'Saved stories', app.stories.list({ ...parseStoryFilters(SAVED_VIEW), pageSize: 1 }).total)}
     </nav>
     <details class="filters-wrap">
       <summary>Filters${activeFilterCount(query) ? html` <span class="muted">&middot; ${activeFilterCount(query)} active</span>` : null}</summary>
@@ -280,14 +309,16 @@ export function storiesPage(app: App, query: Query, flash?: string | null): Safe
           <button type="submit" class="secondary small">Mark all ${result.total} as seen</button>
         </form>`
       : null}
-    <div class="list" data-seen-filter="${f.seen ?? ''}">
+    <div class="list" data-seen-filter="${f.seen ?? ''}" data-saved-filter="${f.saved ?? ''}">
       ${result.items.length
         ? result.items.map((s) => storyCard(s, now, topics))
         : f.seen === 'unseen'
           ? html`<p class="empty">You're all caught up. <a href="/?view=all">Browse all stories</a></p>`
           : f.seen === 'seen'
             ? html`<p class="empty">No stories marked as seen.</p>`
-            : html`<p class="empty">No stories match these filters yet.</p>`}
+            : f.saved === 'saved'
+              ? html`<p class="empty">No stories saved yet. Tap the star on a story to keep it here.</p>`
+              : html`<p class="empty">No stories match these filters yet.</p>`}
     </div>
     ${pages > 1
       ? html`<nav class="pager">
@@ -746,7 +777,7 @@ export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOp
       </div>
       <div class="tags">${storyBadges(s, now)}</div>
       ${publisherRow(s, now)}
-      <div class="story-actions">${storyFeedback(s)}${mapButton(s, mapOpen)}</div>
+      <div class="story-actions">${storyFeedback(s)}${storySave(s, true)}${mapButton(s, mapOpen)}</div>
     </header>
     ${mapPanel(app, s, mapOpen)}
     ${summaryPanel(app, s, now)}

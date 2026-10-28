@@ -253,6 +253,26 @@ export function buildServer(app: App): FastifyInstance {
   server.post('/stories/:id/seen', seenHandler);
   server.post('/api/stories/:id/seen', seenHandler);
 
+  /** Keep a story with the reader, or let it go again. */
+  const saveHandler = async (req: FastifyRequest, reply: FastifyReply) => {
+    const id = app.stories.resolve(idParam(req));
+    if (id == null) return reply.code(404).send({ error: 'Story not found' });
+    const body = (req.body ?? {}) as Body & { type?: string; state?: string };
+    const want = typeof body.type === 'string' ? body.type : str(body, 'type');
+    const state = want || (typeof body.state === 'string' ? body.state : str(body, 'state'));
+    const saved = state === 'save' || state === 'saved';
+    if (!saved && state !== 'unsave' && state !== 'unsaved') {
+      return reply.code(400).send({ error: 'Unknown save state' });
+    }
+    if (saved) app.stories.markSaved(id);
+    else app.stories.markUnsaved(id);
+    const item = app.stories.item(id)!;
+    if (wantsJson(req)) return reply.send({ ok: true, state: { savedAt: item.savedAt } });
+    return reply.redirect(req.headers.referer ?? `/stories/${id}`, 303);
+  };
+  server.post('/stories/:id/save', saveHandler);
+  server.post('/api/stories/:id/save', saveHandler);
+
   const storyFeedbackHandler = async (req: FastifyRequest, reply: FastifyReply) => {
     const id = app.stories.resolve(idParam(req));
     if (id == null) return reply.code(404).send({ error: 'Story not found' });

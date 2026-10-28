@@ -132,7 +132,8 @@ a key.
   in the story's timeline. Tags start with status badges (new development, new, developing,
   brief state), then topics ordered by match probability times the topic's priority in
   your interest profile; core and high-priority topics are filled, normal and low ones
-  are outlined. The check in the top-right corner marks the story seen.
+  are outlined. The check in the top-right corner marks the story seen, and the star
+  next to the first report keeps the story with you.
 - **Seen:** the corner check on a story card or story page checks it off. In an unseen list
   it leaves the list and the counts update; the **Seen** tab shows checked-off stories and
   lets you undo. A story comes back as unseen, labelled **New development**, when it gets
@@ -149,10 +150,17 @@ a key.
   update or additional coverage), discovery feed, original and available discussion
   links, article scores and a Save pill. Relevant / Not relevant controls in the story
   header apply to the whole story; hold an icon to see its meaning without applying it.
-  Hover and keyboard focus also show explanations. Save remains specific to an article on
-  every article page. Story dates and article-management controls are collapsed by
+  Hover and keyboard focus also show explanations. The Save pill in a timeline entry
+  saves that one article; the star in the story header and on a story card saves the
+  whole story. Story dates and article-management controls are collapsed by
   default. Expand **Manage articles** to move selected reports into a new story; merge
   controls and brief generation remain on the story page.
+- **Saved stories:** the star on a story card or in the story header keeps the story
+  with you, the way a Save pill keeps an article. The **Saved stories** tab on the story
+  list shows the stories you kept (the **Saved** in the navigation holds the saved
+  articles), and the **Saved** filter mixes kept and unkept stories with the rest of
+  the filters. Letting a story go in the saved list takes it out of that list, the way
+  checking off a story takes it out of the unseen list.
 - **Live updates:** the story page watches its own story and puts new content in place
   by itself. Write the brief, look up the places, and the page shows the result while
   you watch: no reload, and the scroll position and the open map stay where they are.
@@ -739,9 +747,11 @@ The JSON API includes `GET /api/articles`, `GET /api/articles/:id`,
 `POST /api/stories/:id/seen`
 and, for the glossary, `GET /api/terms/:key`, `GET /api/stories/:id/terms` and
 `POST /api/stories/:id/terms`
-(body `{ "state": "seen" | "unseen" }`). Story query parameters match the Stories URL
+(body `{ "state": "seen" | "unseen" }`). A story is kept with `POST /api/stories/:id/save`
+(body `{ "type": "save" | "unsave" }`). Story query parameters match the Stories URL
 (`q`, `sort`, `days`, `state`, `category`, `min`, `sig`, `publishers`, `summary`, `seen`
-(`unseen` or `seen`), `page`, `size`); the API applies no default filters.
+(`unseen` or `seen`), `saved` (`saved` or `unsaved`), `page`, `size`); the API applies no
+default filters.
 Profile updates accept `{ "definition": { ... }, "changeNote": "...", "author": "user" }`;
 `author` may also be `agent`. Reclassification accepts `days`, `onlyOutdated`,
 `articleIds` and `force`. Feed creation uses `name`, `url`, `pollMinutes`, optional

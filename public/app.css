@@ -106,7 +106,7 @@ form.inline { margin-top: .75rem; }
 .card h2 { font-size: 1.05rem; margin: 0 0 .25rem; line-height: 1.3; }
 .card h2 a { color: var(--text); }
 .card.pending, .card.failed { border-left: 3px solid var(--warn); }
-.meta { display: flex; flex-wrap: wrap; gap: .25rem .9rem; font-size: .82rem; color: var(--muted); }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .9rem; font-size: .82rem; color: var(--muted); }
 .meta .source { color: var(--text-2); font-weight: 600; }
 .article-links { display: inline-flex; flex-wrap: wrap; gap: .4rem 1rem; }
 .summary { margin: .45rem 0; color: var(--text-2); font-size: .9rem; }
@@ -280,6 +280,17 @@ ul.plain li { margin: .3rem 0; }
 .card.leaving { opacity: 0; transform: translateX(8px); transition: opacity .2s, transform .2s; }
 .mark-all { margin: 0 0 .5rem; }
 @media (max-width: 720px) { .seen-btn { width: 44px; height: 44px; } }
+
+/* the star that keeps a story with the reader */
+.story-save { display: inline-flex; margin: 0; }
+.story-save .fb { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; min-width: 36px; height: 36px; padding: 0;
+  background: transparent; border-color: transparent; color: var(--muted); font-size: 1.15rem; border-radius: 8px; }
+.story-save .fb:hover { background: var(--bg); color: var(--text-2); filter: none; }
+.story-save .fb.on { background: transparent; border-color: transparent; color: var(--warn); }
+.story-save.labelled .fb { width: auto; height: auto; padding: .35rem .8rem; font-size: .85rem; border-color: var(--border); color: var(--text-2); }
+.story-save.labelled .fb.on { border-color: var(--warn); color: var(--warn); }
+.story-save.labelled .fb-label { display: inline; }
+@media (max-width: 720px) { .story-save .fb { min-width: 44px; height: 44px; } }
 
 /* story cards: one scrolling line of publishers, one of tags */
 .card.story { position: relative; }

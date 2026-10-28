@@ -106,6 +106,8 @@ export interface StoryFilters {
   summary?: 'ready' | 'stale' | 'none' | 'pending' | 'failed';
   /** unseen: never marked seen, or developed since. seen: marked seen with no newer development. */
   seen?: 'unseen' | 'seen';
+  /** saved: kept by the reader. unsaved: everything else. */
+  saved?: 'saved' | 'unsaved';
   sort?: StorySort;
   page?: number;
   pageSize?: number;
@@ -161,6 +163,8 @@ export interface StoryListItem {
   relevanceLabel: 'relevant' | 'not_relevant' | null;
   /** When the story was last marked seen, if ever. */
   seenAt: string | null;
+  /** When the reader saved the story, if ever. */
+  savedAt: string | null;
   unseen: boolean;
   createdAt: string;
   updatedAt: string;
@@ -267,7 +271,7 @@ const STORY_COLUMNS = `s.id, s.status, s.merged_into_id AS mergedIntoId, s.headl
   s.priority_static AS priorityStatic, s.recency_weight AS recencyWeight, s.recency_half_life_hours AS recencyHalfLifeHours,
   ${priorityExpr('s')} AS priority, s.categories AS categoriesJson,
   s.summary_id AS summaryId, s.summary_stale AS summaryStaleInt, s.summary_request AS summaryRequest, s.summary_error AS summaryError,
-  s.relevance_label AS relevanceLabel, s.seen_at AS seenAt, ${UNSEEN_SQL} AS unseenInt,
+  s.relevance_label AS relevanceLabel, s.seen_at AS seenAt, s.saved_at AS savedAt, ${UNSEEN_SQL} AS unseenInt,
   s.created_at AS createdAt, s.updated_at AS updatedAt`;
 
 const STORY_FROM = `FROM stories s
@@ -1127,6 +1131,8 @@ export class StoryRepository {
     }
     if (f.seen === 'unseen') where.push(UNSEEN_SQL);
     else if (f.seen === 'seen') where.push(`NOT ${UNSEEN_SQL}`);
+    if (f.saved === 'saved') where.push('s.saved_at IS NOT NULL');
+    else if (f.saved === 'unsaved') where.push('s.saved_at IS NULL');
     switch (f.summary) {
       case 'ready':
         where.push(`s.summary_id IS NOT NULL AND s.summary_stale = 0 AND s.summary_request = 'idle'`);
@@ -1231,6 +1237,16 @@ export class StoryRepository {
 
   markUnseen(id: number): boolean {
     return this.db.prepare(`UPDATE stories SET seen_at = NULL, seen_development_at = NULL WHERE id = ? AND status = 'active'`).run(id).changes > 0;
+  }
+
+  /** Keep the story with the reader. Returns false if it does not exist. */
+  markSaved(id: number): boolean {
+    return this.db.prepare(`UPDATE stories SET saved_at = ? WHERE id = ? AND status = 'active'`).run(this.now(), id).changes > 0;
+  }
+
+  /** Let the story go again. Returns false if it does not exist. */
+  markUnsaved(id: number): boolean {
+    return this.db.prepare(`UPDATE stories SET saved_at = NULL WHERE id = ? AND status = 'active'`).run(id).changes > 0;
   }
 
   /** Mark every unseen story matching the filters (all pages) as seen. Returns how many changed. */
