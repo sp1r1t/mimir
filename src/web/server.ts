@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import type { ServerResponse } from 'node:http';
 import { extname, isAbsolute, join, relative } from 'node:path';
 import { timingSafeEqual } from 'node:crypto';
 import formbody from '@fastify/formbody';
@@ -160,6 +161,80 @@ export function buildServer(app: App): FastifyInstance {
     if (target !== id) return reply.redirect(`/stories/${target}`, 301);
     const q = req.query as Query;
     return send(reply, storyPage(app, app.stories.get(id)!, q.flash, q.map === '1'));
+  });
+
+  /**
+   * The page watches its story. The server sends an event whenever something the page
+   * shows has changed — a brief written, places found, an article that joined the story
+   * — and the page puts the new content in place by itself.
+   */
+  const openStreams = new Set<ServerResponse>();
+  // The streams have to end before the server closes: a connection that is still open
+  // would keep it waiting for a reader that has gone.
+  server.addHook('preClose', async () => {
+    for (const res of openStreams) {
+      try {
+        res.end();
+      } catch {
+        // The reader is gone already.
+      }
+    }
+    openStreams.clear();
+  });
+
+  server.get('/api/stories/:id/events', async (req, reply) => {
+    const id = app.stories.resolve(idParam(req));
+    if (id == null) return reply.code(404).send({ error: 'Story not found' });
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, no-transform',
+      Connection: 'keep-alive',
+      // A proxy that buffers would hold the events back until the stream ends.
+      'X-Accel-Buffering': 'no',
+    });
+    openStreams.add(res);
+    let version = app.stories.storyVersion(id);
+    const stop = () => {
+      clearInterval(watch);
+      clearInterval(beat);
+      openStreams.delete(res);
+      if (!res.writableEnded) res.end();
+    };
+    const send = (data: { version: string }) => {
+      try {
+        res.write(`event: change\ndata: ${JSON.stringify(data)}\n\n`);
+      } catch {
+        stop();
+      }
+    };
+    const watch = setInterval(() => {
+      const now = app.stories.storyVersion(id);
+      if (now === version) return;
+      version = now;
+      send({ version });
+    }, 1000);
+    // A comment now and then keeps the connection alive through the quiet moments.
+    const beat = setInterval(() => {
+      try {
+        res.write(': keep-alive\n\n');
+      } catch {
+        stop();
+      }
+    }, 20_000);
+    res.on('error', stop);
+    req.raw.on('close', stop);
+    res.write('retry: 3000\n\n');
+    send({ version });
+    return reply;
+  });
+
+  /** The same watch, for a browser that cannot hold an event stream open. */
+  server.get('/api/stories/:id/state', async (req, reply) => {
+    const id = app.stories.resolve(idParam(req));
+    if (id == null) return reply.code(404).send({ error: 'Story not found' });
+    return reply.send({ version: app.stories.storyVersion(id) });
   });
 
   const seenHandler = async (req: FastifyRequest, reply: FastifyReply) => {

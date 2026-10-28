@@ -153,6 +153,13 @@ a key.
   every article page. Story dates and article-management controls are collapsed by
   default. Expand **Manage articles** to move selected reports into a new story; merge
   controls and brief generation remain on the story page.
+- **Live updates:** the story page watches its own story and puts new content in place
+  by itself. Write the brief, look up the places, and the page shows the result while
+  you watch: no reload, and the scroll position and the open map stay where they are.
+  The page holds a server-sent event stream open for the story it shows; if the browser
+  cannot keep the stream open, the page falls back to asking for the story's version
+  every few seconds. The same happens when a story develops while the page is open: the
+  new articles and the new brief arrive by themselves.
 - **Map:** the **Map** button in the story header opens a card with the places the story
   is about on an OpenStreetMap map, and a list of the same places with the articles that
   mention them. A pin's popup links to the articles that name the place. **Full screen**
@@ -355,10 +362,40 @@ in `public/vendor/leaflet/`, not loaded from a CDN, so the feature works on a ne
 that cannot reach one.
 
 **Without JavaScript.** The **Map** button is a link, so it opens the card on the server;
-the list of places is server-rendered; only the map itself needs JavaScript. The card
-polls for the answer while a lookup is running and refreshes itself when it is ready.
-The **Full screen** button is only shown when JavaScript is there, because without it
-there is nothing to press. The same goes for the timeline's order switch.
+the list of places is server-rendered; only the map itself needs JavaScript. The brief
+and the places are written by the server, so without JavaScript the page does not
+update itself: reload it to see the result. The **Full screen** button is only shown
+when JavaScript is there, because without it there is nothing to press. The same goes
+for the timeline's order switch.
+
+## Live updates
+
+A story page watches its own story, so that nothing the reader asks for ends in a
+reload. The page holds a server-sent event stream open for the story it shows; the
+server sends an event when something on the page has changed.
+
+**What counts as a change.** The server keeps a short fingerprint of each story: the
+revision of the brief, whether a brief was asked for, whether the brief is out of date,
+the state of the place lookup, the number of articles in the story, and the newest
+brief, place and assessment. Any write to a story moves that fingerprint, so a new
+brief, a found place, a new article or a new assessment is noticed without the web
+layer having to know which of them it was.
+
+**The endpoints.**
+
+- `GET /api/stories/:id/events` — the event stream. It opens with the version the
+  page already has, and sends a `change` event with the new version whenever the
+  fingerprint moves. A comment every 20 seconds keeps the connection alive, and the
+  browser reconnects on its own.
+- `GET /api/stories/:id/state` — the same fingerprint as JSON, for a browser that
+  cannot hold an event stream open. The page then asks every few seconds.
+
+**What the page does.** On a change, the page fetches the story page again and puts the
+new story in place of the old one: the brief, the places, the map and the timeline all
+come back in the new version. The reader's timeline order and the open map are kept,
+and the map is drawn again with the new places. The two buttons on the page — **Write
+the brief** and **Find places** — post in the background and let the page update
+itself when the answer is ready.
 
 ## Configuration
 
@@ -609,7 +646,9 @@ implementing those features in Phase 1.
 The JSON API includes `GET /api/articles`, `GET /api/articles/:id`,
 `POST /api/articles/:id/feedback`, `GET/POST /api/sources`, `GET/PUT /api/profile`,
 `GET /api/profile/versions`, `POST /api/reclassify`, `GET /api/stats`, `GET /api/stories`,
-`GET /api/stories/:id`, `POST /api/stories/:id/summary` and `POST /api/stories/:id/seen`
+`GET /api/stories/:id`, `GET /api/stories/:id/events` (the live event stream),
+`GET /api/stories/:id/state`, `POST /api/stories/:id/summary` and
+`POST /api/stories/:id/seen`
 (body `{ "state": "seen" | "unseen" }`). Story query parameters match the Stories URL
 (`q`, `sort`, `days`, `state`, `category`, `min`, `sig`, `publishers`, `summary`, `seen`
 (`unseen` or `seen`), `page`, `size`); the API applies no default filters.

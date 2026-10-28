@@ -728,6 +728,27 @@ export class StoryRepository {
     return r.t;
   }
 
+  /**
+   * A short digest of everything a story page shows: the brief, the places, the articles
+   * and the assessment. A page that watches it knows when to refresh itself, without
+   * having to be told what changed.
+   */
+  storyVersion(storyId: number): string {
+    const r = this.db
+      .prepare(
+        `SELECT s.summary_id AS summaryId, s.summary_request AS summaryRequest, s.summary_stale AS summaryStale,
+                s.places_state AS placesState,
+                (SELECT COUNT(*) FROM story_articles WHERE story_id = s.id) AS articles,
+                (SELECT MAX(id) FROM story_summaries WHERE story_id = s.id) AS brief,
+                (SELECT MAX(id) FROM story_places WHERE story_id = s.id) AS places,
+                (SELECT MAX(id) FROM story_assessments WHERE story_id = s.id) AS assessment
+           FROM stories s WHERE s.id = ?`,
+      )
+      .get(storyId) as Record<string, unknown> | undefined;
+    if (!r) return '';
+    return [r.summaryId, r.summaryRequest, r.summaryStale, r.placesState, r.articles, r.brief, r.places, r.assessment].join('|');
+  }
+
   // ---- Places ------------------------------------------------------------------------
 
   /** Where the place lookup stands, and what went wrong if something did. */

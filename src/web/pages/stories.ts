@@ -341,7 +341,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
   const waitReason = appLimited
     ? `Mimir's automatic-summary limit is reached (${budget.used}/${budget.limit} provider attempts in the past 24 hours, including retries). This is separate from the MiniMax plan allowance.`
     : s.summaryError;
-  const action = html`<form method="post" action="/stories/${s.id}/summary" class="inline">
+  const action = html`<form method="post" action="/stories/${s.id}/summary" class="inline" data-story-action="summary">
     <button type="submit" class="${s.summary ? 'secondary' : ''}" ${configured && !running ? null : html`disabled`}>${running ? 'Writing…' : waiting ? 'Write now' : s.summaryState === 'failed' ? 'Retry the brief' : s.summary ? 'Rewrite the brief' : 'Write the brief'}</button>
   </form>`;
   const status =
@@ -597,10 +597,10 @@ function mapPanel(app: App, s: StoryDetail, open: boolean): SafeHtml {
       })),
     }).replace(/</g, '\\u003c'),
   );
-  const action = html`<form method="post" action="/stories/${s.id}/places" class="inline">
+  const action = html`<form method="post" action="/stories/${s.id}/places" class="inline" data-story-action="places">
     <button type="submit" class="secondary" ${waiting ? html`disabled` : null}>${s.places.length ? 'Look again' : 'Find places'}</button>
   </form>`;
-  return html`<section class="panel map-panel" id="story-map"${open ? '' : html` hidden`}${waiting ? html` data-places-story="${s.id}"` : null}>
+  return html`<section class="panel map-panel" id="story-map"${open ? '' : html` hidden`}>
     <div class="map-head">
       <h3>Map</h3>
       ${located.length ? html`<button type="button" class="map-expand" data-map-fullscreen aria-pressed="false">Full screen</button>` : null}
@@ -630,7 +630,7 @@ function mapPanel(app: App, s: StoryDetail, open: boolean): SafeHtml {
 export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOpen = false): SafeHtml {
   const now = Date.now();
   const body = html`
-  <article class="detail story-detail">
+  <article class="detail story-detail" data-story-id="${s.id}" data-version="${app.stories.storyVersion(s.id)}">
     <header>
       ${seenButton(s)}
       <h1>${s.summary?.content.headline ?? s.headline}</h1>

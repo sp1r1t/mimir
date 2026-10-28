@@ -463,6 +463,16 @@ function setFullscreen(card, on) {
   });
 }
 
+// The map holds on to the card it was drawn in: it has to let go before the card is
+// replaced.
+function destroyMap(card) {
+  if (!card) return;
+  const drawn = leaflet.maps.get(card);
+  if (!drawn) return;
+  leaflet.maps.delete(card);
+  drawn.map.remove();
+}
+
 document.addEventListener('click', (ev) => {
   const button = ev.target.closest('[data-map-fullscreen]');
   if (!button) return;
@@ -490,42 +500,161 @@ window.addEventListener('resize', () => {
   }
 });
 
+/** Open or close the map card, and remember it in the address so a reload keeps it. */
+function setMapOpen(open) {
+  const card = document.getElementById('story-map');
+  if (!card) return;
+  if (open) card.removeAttribute('hidden');
+  else card.setAttribute('hidden', '');
+  const toggle = document.querySelector('[data-map-toggle]');
+  if (toggle) toggle.setAttribute('aria-expanded', String(open));
+  const url = new URL(location.href);
+  if (open) url.searchParams.set('map', '1');
+  else url.searchParams.delete('map');
+  history.replaceState(null, '', url);
+  if (open) drawMap(card);
+}
+
 document.addEventListener('click', (ev) => {
   const toggle = ev.target.closest('[data-map-toggle]');
   if (!toggle) return;
   ev.preventDefault();
   const card = document.getElementById(toggle.getAttribute('aria-controls'));
   if (!card) return;
-  const open = card.hasAttribute('hidden');
-  if (open) card.removeAttribute('hidden');
-  else card.setAttribute('hidden', '');
-  toggle.setAttribute('aria-expanded', String(open));
-  const url = new URL(location.href);
-  if (open) url.searchParams.set('map', '1');
-  else url.searchParams.delete('map');
-  history.replaceState(null, '', url);
-  if (open) drawMap(card);
+  setMapOpen(card.hasAttribute('hidden'));
 });
 
 // The card is open on arrival when the page was asked for with ?map=1.
 for (const card of document.querySelectorAll('.map-panel:not([hidden])')) drawMap(card);
 
-// While the places of a story are being looked up, wait for the answer.
-for (const card of document.querySelectorAll('[data-places-story]')) {
-  const storyId = card.dataset.placesStory;
-  const wait = async () => {
-    try {
-      const res = await fetch(`/api/stories/${storyId}/places`, { headers: { Accept: 'application/json' } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (data.state === 'pending' || data.state === 'running') {
-        setTimeout(wait, 3000);
-        return;
-      }
-      location.reload();
-    } catch {
-      setTimeout(wait, 5000);
-    }
-  };
-  setTimeout(wait, 3000);
+// ---- Live updates -----------------------------------------------------------------
+// A story page watches its own story. When the brief or the places are written, the
+// server says that the story changed, and the page puts the new story in place of the
+// old one. The reader does not have to reload anything.
+
+const live = { stream: null, poll: null, failures: 0 };
+
+function storyCard() {
+  return document.querySelector('.story-detail[data-story-id]');
 }
+
+/** Ask for the story again, and swap the fresh page in place of the one on screen. */
+async function refreshStory(storyId) {
+  const current = storyCard();
+  if (!current || current.dataset.storyId !== String(storyId)) return;
+  const res = await fetch(`${location.pathname}${location.search}`, { headers: { Accept: 'text/html' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const page = new DOMParser().parseFromString(await res.text(), 'text/html');
+  const fresh = page.querySelector('.story-detail[data-story-id]');
+  if (!fresh) return;
+  // The story may have been merged into another one while the page was open: that is a
+  // page of its own, and the browser is better at following it than the page is.
+  if (fresh.dataset.storyId !== String(storyId)) {
+    location.reload();
+    return;
+  }
+  if (page.title) document.title = page.title;
+  // The map belongs to the card it was drawn in: let go of it before the card goes.
+  const oldMap = current.querySelector('#story-map');
+  const mapOpen = oldMap ? !oldMap.hasAttribute('hidden') : false;
+  const mapFull = oldMap ? oldMap.classList.contains('fullscreen') : false;
+  destroyMap(oldMap);
+  current.replaceWith(fresh);
+  const list = fresh.querySelector('.timeline');
+  if (list) setTimelineOrder(list, storedTimelineOrder());
+  const map = fresh.querySelector('#story-map');
+  if (map && mapFull) setFullscreen(map, true);
+  if (map && mapOpen) drawMap(map);
+}
+
+function stopWatching() {
+  if (live.stream) {
+    live.stream.close();
+    live.stream = null;
+  }
+  if (live.poll) {
+    clearInterval(live.poll);
+    live.poll = null;
+  }
+}
+
+/** Watch a story over an event stream: the server writes when the story changes. */
+function startWatching(storyId) {
+  stopWatching();
+  live.failures = 0;
+  const source = new EventSource(`/api/stories/${storyId}/events`);
+  live.stream = source;
+  source.addEventListener('change', (ev) => {
+    let version = '';
+    try {
+      version = JSON.parse(ev.data).version;
+    } catch {
+      return;
+    }
+    if (!version || version === storyCard()?.dataset.version) return;
+    refreshStory(storyId).catch(() => {});
+  });
+  source.onerror = () => {
+    // The browser reconnects on its own; when it gives up, the page asks instead.
+    if (source.readyState !== EventSource.CLOSED) return;
+    live.failures += 1;
+    if (live.failures >= 3) startPolling(storyId);
+  };
+}
+
+/** The same watch for a browser that cannot hold an event stream open. */
+function startPolling(storyId) {
+  stopWatching();
+  live.poll = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/stories/${storyId}/state`, { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { version } = await res.json();
+      if (!version || version === storyCard()?.dataset.version) return;
+      await refreshStory(storyId);
+    } catch {
+      // The next tick tries again.
+    }
+  }, 3000);
+}
+
+const watched = storyCard();
+if (watched) startWatching(watched.dataset.storyId);
+
+/** A short notice at the top of the page, for the result of a button. */
+function showNotice(message, isError = false) {
+  document.querySelector('[data-live-notice]')?.remove();
+  if (!message) return;
+  const banner = document.createElement('div');
+  banner.className = isError ? 'banner error' : 'banner ok';
+  banner.setAttribute('role', 'status');
+  banner.dataset.liveNotice = '';
+  banner.textContent = message;
+  document.querySelector('main')?.prepend(banner);
+  setTimeout(() => banner.remove(), 8000);
+}
+
+// The two buttons of a story page ask the server to write something. The page watches
+// for the result, so the button does not have to reload the page.
+document.addEventListener('submit', async (ev) => {
+  const form = ev.target;
+  const action = form.dataset.storyAction;
+  if (!action) return;
+  ev.preventDefault();
+  const button = ev.submitter;
+  const url = new URL(form.action, location.href);
+  url.pathname = url.pathname.replace('/stories/', '/api/stories/');
+  if (button) button.disabled = true;
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { Accept: 'application/json' } });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    if (action === 'places') setMapOpen(true);
+    showNotice(body.message ?? 'Queued.');
+    // Nothing was queued, so no new page will come: the button has to be usable again.
+    if (body.queued === false && button) button.disabled = false;
+  } catch (err) {
+    showNotice(err.message, true);
+    if (button) button.disabled = false;
+  }
+});
