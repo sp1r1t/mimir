@@ -153,8 +153,9 @@ a key.
   controls and brief generation remain on the story page.
 - **Map:** the **Map** button in the story header opens a card with the places the story
   is about on an OpenStreetMap map, and a list of the same places with the articles that
-  mention them. A pin's popup links to the articles that name the place. **Find places**
-  looks them up; **Look again** refreshes them. See **Places and the map** below.
+  mention them. A pin's popup links to the articles that name the place. **Full screen**
+  gives the map the whole screen. **Find places** looks them up; **Look again** refreshes
+  them. See **Places and the map** below.
 - **Articles:** sort by rank, personal relevance, publication or discovery; search title,
   summary, text and author; filter by source, category, relevance range, date,
   processing status, saved state, feedback or article type. Clear filters to see all
@@ -279,6 +280,14 @@ articles that mention them, so the information is readable even where the map is
 pin's popup names the place, gives the gazetteer's own wording for it and the
 coordinates, and links to the articles that mention it.
 
+**Full screen.** The map card has a **Full screen** button: the map then takes the whole
+screen, which is easier on a phone and leaves the popups the room they need. The button
+becomes **Close map**, and the Escape key leaves full screen as well. A popup never grows
+taller than the map it is in, so it can always be closed: a place that many articles
+mention gets a list that scrolls.
+
+
+
 **Where the places come from.** Two steps, and they are kept apart on purpose:
 
 1. *Reading the names.* A separate model pass over the story's articles asks one question:
@@ -337,6 +346,8 @@ that cannot reach one.
 **Without JavaScript.** The **Map** button is a link, so it opens the card on the server;
 the list of places is server-rendered; only the map itself needs JavaScript. The card
 polls for the answer while a lookup is running and refreshes itself when it is ready.
+The **Full screen** button is only shown when JavaScript is there, because without it
+there is nothing to press.
 
 ## Configuration
 

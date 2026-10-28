@@ -594,7 +594,10 @@ function mapPanel(app: App, s: StoryDetail, open: boolean): SafeHtml {
     <button type="submit" class="secondary" ${waiting ? html`disabled` : null}>${s.places.length ? 'Look again' : 'Find places'}</button>
   </form>`;
   return html`<section class="panel map-panel" id="story-map"${open ? '' : html` hidden`}${waiting ? html` data-places-story="${s.id}"` : null}>
-    <h3>Map</h3>
+    <div class="map-head">
+      <h3>Map</h3>
+      ${located.length ? html`<button type="button" class="map-expand" data-map-fullscreen aria-pressed="false">Full screen</button>` : null}
+    </div>
     ${badge && !status ? html`<p class="badge-line"><span class="badge ${badge[0]}">${badge[1]}</span></p>` : null}
     ${status}
     ${located.length

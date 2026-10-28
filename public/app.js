@@ -249,6 +249,10 @@ document.addEventListener('click', (ev) => {
 // is opened, so a story nobody looks at costs no tiles.
 const leaflet = { promise: null, maps: new WeakMap() };
 
+// The controls that need JavaScript are hidden until it is there.
+document.documentElement.classList.add('js');
+
+
 function loadLeaflet() {
   if (window.leaflet) return Promise.resolve(window.leaflet);
   if (!leaflet.promise) {
@@ -313,6 +317,25 @@ function popupFor(place) {
   return wrap;
 }
 
+// The map container clips what does not fit inside it, and a popup that is clipped by
+// the top edge cannot be closed. The popup is therefore never taller than the map.
+function popupMaxHeight(canvas) {
+  return Math.max(120, canvas.clientHeight - 70);
+}
+
+// Give the open popups the height that fits the map as it is now.
+function fitPopups(card, drawn) {
+  const canvas = card.querySelector('[data-map-canvas]');
+  if (!canvas) return;
+  const max = popupMaxHeight(canvas);
+  for (const marker of drawn.markers) {
+    const popup = marker.getPopup();
+    if (!popup) continue;
+    popup.options.maxHeight = max;
+    if (popup.isOpen()) popup.update();
+  }
+}
+
 function drawMap(card) {
   const canvas = card.querySelector('[data-map-canvas]');
   const source = card.querySelector('[data-map-data]');
@@ -322,7 +345,8 @@ function drawMap(card) {
     .then((L) => {
       const drawn = leaflet.maps.get(card);
       if (drawn) {
-        drawn.invalidateSize();
+        drawn.map.invalidateSize();
+        fitPopups(card, drawn);
         return;
       }
       const map = L.map(canvas, { scrollWheelZoom: false, zoomControl: false });
@@ -332,6 +356,7 @@ function drawMap(card) {
       L.tileLayer(data.tileUrl, { maxZoom: 19, attribution: data.attribution }).addTo(map);
       const bounds = [];
       const close = [];
+      const markers = [];
       for (const place of data.places) {
         const icon = L.divIcon({
           className: 'map-pin-wrap',
@@ -343,7 +368,8 @@ function drawMap(card) {
           popupAnchor: [0, 12],
         });
         const marker = L.marker([place.lat, place.lon], { icon, title: place.name }).addTo(map);
-        marker.bindPopup(popupFor(place));
+        marker.bindPopup(popupFor(place), { maxHeight: popupMaxHeight(canvas) });
+        markers.push(marker);
         bounds.push([place.lat, place.lon]);
         if (place.kind !== 'country') close.push([place.lat, place.lon]);
       }
@@ -353,7 +379,7 @@ function drawMap(card) {
       if (frame.length === 1) map.setView(frame[0], 9);
       else if (frame.length > 1) map.fitBounds(frame, { padding: [28, 28], maxZoom: 12 });
       else map.setView([20, 0], 1);
-      leaflet.maps.set(card, map);
+      leaflet.maps.set(card, { map, markers });
     })
     .catch(() => {
       const note = document.createElement('p');
@@ -362,6 +388,52 @@ function drawMap(card) {
       canvas.replaceChildren(note);
     });
 }
+
+// The map can take the whole screen: the places are easier to see that way, and the
+// popup has room for the links of a place with many sources.
+function setFullscreen(card, on) {
+  const button = card.querySelector('[data-map-fullscreen]');
+  card.classList.toggle('fullscreen', on);
+  document.body.classList.toggle('map-open', on);
+  if (button) {
+    button.textContent = on ? 'Close map' : 'Full screen';
+    button.setAttribute('aria-pressed', String(on));
+  }
+  const drawn = leaflet.maps.get(card);
+  if (!drawn) return;
+  // The map has a new size: the tiles and the popups have to follow it.
+  requestAnimationFrame(() => {
+    drawn.map.invalidateSize();
+    fitPopups(card, drawn);
+  });
+}
+
+document.addEventListener('click', (ev) => {
+  const button = ev.target.closest('[data-map-fullscreen]');
+  if (!button) return;
+  ev.preventDefault();
+  const card = button.closest('.map-panel');
+  if (!card) return;
+  setFullscreen(card, !card.classList.contains('fullscreen'));
+});
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  const card = document.querySelector('.map-panel.fullscreen');
+  if (!card) return;
+  setFullscreen(card, false);
+  card.querySelector('[data-map-fullscreen]')?.focus();
+});
+
+// The map gets a new size when the window does.
+window.addEventListener('resize', () => {
+  for (const card of document.querySelectorAll('.map-panel')) {
+    const drawn = leaflet.maps.get(card);
+    if (!drawn) continue;
+    drawn.map.invalidateSize();
+    fitPopups(card, drawn);
+  }
+});
 
 document.addEventListener('click', (ev) => {
   const toggle = ev.target.closest('[data-map-toggle]');

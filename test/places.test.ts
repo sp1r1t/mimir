@@ -593,6 +593,12 @@ describe('the places of a story', () => {
     expect(parsed.places.map((p: { name: string }) => p.name)).toEqual(['Kyiv', 'Ukraine']);
     expect(parsed.tileUrl).toContain('tile.openstreetmap.org');
 
+    // The map can take the whole screen, so that the places and their popups have room.
+    const expand = openDoc.querySelector('[data-map-fullscreen]');
+    expect(expand).not.toBeNull();
+    expect(expand!.textContent).toBe('Full screen');
+    expect(expand!.getAttribute('aria-pressed')).toBe('false');
+
     const api = await server.inject({ method: 'GET', url: `/api/stories/${story.id}/places` });
     expect(api.statusCode).toBe(200);
     const body = JSON.parse(api.body);
