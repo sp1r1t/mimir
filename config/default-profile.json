@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "summary": "A software engineer and architect who self-hosts infrastructure and follows AI, software engineering, open source, and infrastructure closely, while staying informed about important developments in science, technology, economics, and world affairs.",
+  "topics": [
+    {
+      "id": "ai-llm",
+      "label": "Artificial intelligence and LLMs",
+      "description": "New models and model releases, capabilities, benchmarks with substance, training and inference techniques, AI research results, AI policy and safety developments, and the AI industry's major moves.",
+      "priority": "core"
+    },
+    {
+      "id": "agentic-coding",
+      "label": "Agentic software engineering and coding agents",
+      "description": "AI coding agents and assistants (e.g. Claude Code, Codex, Copilot, Cursor), agent tooling and protocols such as MCP, workflows and practices for building software with agents, and evaluations of agents on real engineering work.",
+      "priority": "core"
+    },
+    {
+      "id": "software-architecture",
+      "label": "Software architecture and engineering practices",
+      "description": "System design, architectural patterns, programming languages, testing, reliability, maintainability, team practices, and in-depth engineering write-ups.",
+      "priority": "high"
+    },
+    {
+      "id": "open-source-tooling",
+      "label": "Open-source software and developer tooling",
+      "description": "Notable open-source projects and releases, licensing and governance, compilers, editors, build systems, version control, package ecosystems, and developer tools.",
+      "priority": "high"
+    },
+    {
+      "id": "linux-android-selfhosted",
+      "label": "Linux, Android, and self-hosted infrastructure",
+      "description": "The Linux kernel and distributions, desktop Linux, Android platform and custom ROMs, home servers, self-hosted applications, networking, and homelab hardware.",
+      "priority": "high"
+    },
+    {
+      "id": "cloud-native",
+      "label": "Cloud-native and distributed systems",
+      "description": "Kubernetes, containers, cloud platforms, databases, distributed systems, observability, and infrastructure as code, including major outages and their post-mortems.",
+      "priority": "normal"
+    },
+    {
+      "id": "security",
+      "label": "Security and privacy",
+      "description": "Significant vulnerabilities, supply-chain attacks, security research, and privacy developments that affect software, infrastructure, or users.",
+      "priority": "normal"
+    },
+    {
+      "id": "science-tech",
+      "label": "Science and technology",
+      "description": "Important scientific discoveries and research, space, energy, hardware and semiconductors, and major technology-industry developments.",
+      "priority": "normal"
+    },
+    {
+      "id": "economics",
+      "label": "Economics and business",
+      "description": "Macroeconomics, markets, monetary and fiscal policy, trade, and major business developments with broad consequences.",
+      "priority": "low"
+    },
+    {
+      "id": "world-news",
+      "label": "World news",
+      "description": "Major international political events, conflicts, elections, and policy decisions of broad significance.",
+      "priority": "low"
+    }
+  ],
+  "exclusions": [
+    {
+      "id": "deals-shopping",
+      "description": "Shopping deals, discounts, gift guides, and product price drops."
+    },
+    {
+      "id": "celebrity-sports",
+      "description": "Celebrity gossip, entertainment industry news, and sports results."
+    }
+  ],
+  "editorialPreferences": [
+    "Prefer substantive developments, primary sources, and in-depth technical analysis over marketing and press releases.",
+    "Deprioritize repetitive announcements, incremental minor version releases, funding-round news without technical substance, and listicles.",
+    "Prefer reporting that explains why a development matters over hype or speculation."
+  ],
+  "inferred": { "topics": [], "notes": [] },
+  "ranking": {
+    "categoryThreshold": 0.5,
+    "weights": { "relevance": 0.5, "significance": 0.2, "urgency": 0.1, "topicMatch": 0.2 },
+    "priorityWeights": { "core": 1, "high": 0.8, "normal": 0.6, "low": 0.35 },
+    "promotionalPenalty": 0.3,
+    "exclusionPenalty": 0.7
+  }
+}

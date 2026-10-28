@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Example Tech News</title>
+    <link>https://news.example.com/</link>
+    <description>Test feed</description>
+    <language>en-us</language>
+    <item>
+      <title>Kernel 7.2 released with new scheduler</title>
+      <link>https://news.example.com/kernel-7-2?utm_source=rss&amp;utm_medium=feed</link>
+      <guid isPermaLink="false">example-1001</guid>
+      <pubDate>Sat, 24 Oct 2026 10:00:00 +0000</pubDate>
+      <dc:creator>Ada Lovelace</dc:creator>
+      <category>Linux</category>
+      <description>&lt;p&gt;The new &lt;b&gt;scheduler&lt;/b&gt; improves latency.&lt;/p&gt;</description>
+      <content:encoded><![CDATA[<p>The new scheduler improves latency for desktop workloads.</p><p>Benchmarks show a 12% gain.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>Open model tops coding benchmark</title>
+      <link>https://news.example.com/open-model</link>
+      <guid>https://news.example.com/open-model</guid>
+      <pubDate>Fri, 23 Oct 2026 08:30:00 GMT</pubDate>
+      <description>An open-weights model reaches a new state of the art on agentic coding.</description>
+    </item>
+    <item>
+      <title>Item without guid</title>
+      <link>https://news.example.com/no-guid#comments</link>
+      <pubDate>not a date</pubDate>
+    </item>
+  </channel>
+</rss>

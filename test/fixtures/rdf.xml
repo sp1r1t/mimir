@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel rdf:about="https://world.example.net/rss">
+    <title>Example World Service</title>
+    <link>https://world.example.net/</link>
+    <description>World news</description>
+  </channel>
+  <item rdf:about="https://world.example.net/a-1?maca=en-rss">
+    <title>Election results announced</title>
+    <link>https://world.example.net/a-1?maca=en-rss</link>
+    <description>Final results were published on Sunday.</description>
+    <dc:date>2026-10-25T14:13:00Z</dc:date>
+    <dc:language>en</dc:language>
+    <dc:subject>News</dc:subject>
+  </item>
+</rdf:RDF>
