@@ -1,3 +1,4 @@
+import type { PlaceName } from '../places/schema.js';
 import { sleep } from '../util/backoff.js';
 import {
   SummaryProviderError,
@@ -11,9 +12,9 @@ import {
 export type MockMode = 'ok' | 'invalid' | ProviderErrorKind;
 
 /**
- * Offline provider for development and tests. In 'ok' mode it builds a schema-valid summary
- * from the articles in the prompt (headlines only, cited correctly); other modes fail the
- * way a real provider would.
+ * Offline provider for development and tests. In 'ok' mode it builds a schema-valid brief
+ * from the articles in the prompt (headlines only, cited correctly), and names the places
+ * it was given; other modes fail the way a real provider would.
  */
 export class MockSummaryProvider implements SummaryProvider {
   readonly name = 'mock';
@@ -24,6 +25,7 @@ export class MockSummaryProvider implements SummaryProvider {
   constructor(
     public mode: MockMode = 'ok',
     private readonly delayMs = 0,
+    private readonly places: PlaceName[] = [],
   ) {}
 
   isConfigured(): boolean {
@@ -63,6 +65,17 @@ export class MockSummaryProvider implements SummaryProvider {
       context_significance: [],
       perspectives: [],
       whats_next: [],
+      places: first
+        ? this.places.map((p) => ({
+            name: p.name,
+            kind: p.kind,
+            country: p.country ?? null,
+            country_code: p.countryCode ?? null,
+            query: p.query ?? p.name,
+            role: p.role ?? null,
+            sources: [first.id],
+          }))
+        : [],
     };
     return this.result(JSON.stringify(summary));
   }

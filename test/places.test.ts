@@ -7,6 +7,7 @@ import { sha256, stableStringify } from '../src/util/hash.js';
 import { NominatimGeocoder, UNRESOLVED, type Geocode, type Geocoder, type PlaceQuery } from '../src/places/geocoder.js';
 import { parsePlaces, placeKey, PlacesValidationError, preparePlacesPrompt } from '../src/places/places.js';
 import { MockPlacesProvider } from '../src/places/mock.js';
+import { MockSummaryProvider } from '../src/summaries/mock.js';
 import type { MatchArticle, MatchCandidate, MatchJudgement, LevelAnswer, StoryMatcher } from '../src/stories/matcher.js';
 import { buildServer } from '../src/web/server.js';
 import { FeedServer, makeApp, waitFor, type TestApp } from './helpers.js';
@@ -465,12 +466,13 @@ describe('the places of a story', () => {
     t = srv = server = null;
   });
 
-  async function setup(opts: { places?: MockPlacesProvider; geocoder?: FakeGeocoder } = {}) {
+  async function setup(opts: { places?: MockPlacesProvider; geocoder?: FakeGeocoder; summaries?: MockSummaryProvider } = {}) {
     srv = new FeedServer();
     await srv.start();
     t = makeApp({
       classifier: new StubClassifier(),
       matcher: new StubMatcher(['kyiv']),
+      summaries: opts.summaries,
       places: opts.places ?? new MockPlacesProvider(),
       geocoder: opts.geocoder ?? new FakeGeocoder({ 'Kyiv, Ukraine': KYIV, Ukraine: UKRAINE }),
       env: { SUMMARY_AUTO_ENABLED: 'false', STORY_MIN_SIMILARITY: '0.01' },
@@ -495,6 +497,28 @@ describe('the places of a story', () => {
     const id = (app.db.prepare('SELECT id FROM articles WHERE guid = ?').get(guid) as { id: number }).id;
     return app.stories.get(app.stories.storyIdOf(id)!)!;
   };
+
+  it('takes the places from the brief it was written with, and asks the model no more', async () => {
+    const summaries = new MockSummaryProvider('ok', 0, [
+      { name: 'Kyiv', kind: 'city', country: 'Ukraine', countryCode: 'ua', query: 'Kyiv', role: 'where the strike happened' },
+    ]);
+    const places = new MockPlacesProvider();
+    const app = await setup({ summaries, places });
+    await publish([{ guid: 'a', title: 'A strike in Kyiv', host: 'wire.example.com' }]);
+    const story = storyOf('a');
+
+    app.storyPipeline.requestSummary(story.id);
+    await waitFor(() => app.stories.get(story.id)!.placesState === 'ready');
+
+    const s = app.stories.get(story.id)!;
+    expect(places.calls).toBe(0); // the brief named them; the model was not asked again
+    const stored = JSON.parse(
+      (app.db.prepare('SELECT content FROM story_summaries WHERE id = ?').get(s.summary!.id) as { content: string }).content,
+    );
+    expect(stored.places.map((p: { name: string }) => p.name)).toEqual(['Kyiv']);
+    expect(s.places.map((p) => p.name)).toEqual(['Kyiv']);
+    expect(s.places[0]).toMatchObject({ status: 'located', lat: KYIV.lat, lon: KYIV.lon, label: 'Kyiv, Ukraine' });
+  });
 
   it('names the places of a story and puts them on the map', async () => {
     const places = new MockPlacesProvider();

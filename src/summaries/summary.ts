@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import { parseBriefPlaces, FoundPlaceSchema } from '../places/schema.js';
 import { sha256 } from '../util/hash.js';
 import { truncate } from '../util/text.js';
 
 /** Bump whenever the instructions, input layout, or output schema change. */
-export const SUMMARY_PROMPT_VERSION = 'summary/4';
+export const SUMMARY_PROMPT_VERSION = 'summary/5';
 
 export type TextBasis = 'full_text' | 'partial_text' | 'feed_summary' | 'headline_only';
 
@@ -122,6 +123,18 @@ Structure
 4. "context_significance": the relevant background and why the developments matter.
 5. "perspectives": material differences between sources, contested claims, and what is uncertain.
 6. "whats_next": known upcoming events, unresolved questions, and developments worth watching.
+7. "places": the places the story is about, so the reader can see where it happened.
+
+Places
+The brief and the places come out of the same answer, so name the places in the same breath. They are looked up in a gazetteer afterwards, so give names only and no coordinates.
+- List the places the story is actually about: where the events happened, and places the headline or the key facts name. Skip passing mentions, a publisher's own town, and loose references such as "the West" or "the region".
+- Resolve every place in the context of the articles before you name it. The same name can mean different places: "Gaza" is a strip, a city and a province, and there are towns of that name in other countries; "Ohio" is a state and a river. Decide which place the articles mean, and do not decide it from your own knowledge of the world: take the country, the region or the larger unit from the articles themselves.
+- "name" is the place as the articles write it. "query" is the name to look up in a gazetteer, made unambiguous with the words the articles use for it: add the country, the region or the larger unit it belongs to ("Gaza Strip", "Kherson", "Springfield, Illinois"). When the articles do not say which place it is, leave "query" as the bare name.
+- "country" is the country the place lies in, only when the articles place it there. "country_code" is its ISO 3166-1 alpha-2 code ("ua" for Ukraine, "ps" for Palestine, "us" for the United States); leave it empty when the articles do not say.
+- "kind" is one of: city, town, country, region, other.
+- "role" is a few words, in ${language}, saying why the place is in the story.
+- Every place cites in "sources" the ids of the articles that name it. Cite only articles that actually contain it.
+- "places" is empty when the articles name no place.
 
 Guidelines
 - Adapt length and structure to the complexity and significance of the story.
@@ -154,9 +167,10 @@ Rules:
   "key_developments": [same item shape],
   "context_significance": [same item shape],
   "perspectives": [same item shape],
-  "whats_next": [same item shape]
+  "whats_next": [same item shape],
+  "places": [{"name": "string", "kind": "city|town|country|region|other", "country": "string", "country_code": "two letters", "query": "string", "role": "string", "sources": [article ids]}]
 }
-Limits: gist 1 to 3 items, new_since up to 5, key_developments up to 6, context_significance up to 4, perspectives up to 5, whats_next up to 4. Target length: 150 to 300 words for a typical brief.`;
+Limits: gist 1 to 3 items, new_since up to 5, key_developments up to 6, context_significance up to 4, perspectives up to 5, whats_next up to 4, places up to 12. Target length: 150 to 300 words for a typical brief.`;
 }
 
 /** One article as the model sees it: how much of it there is, and that much of its text. */
@@ -257,17 +271,24 @@ const Claim = z
 const Note = z.object({ text: z.string().trim().min(1).max(800), sources: ids }).strict();
 
 /** The Story Intelligence Brief, as the model writes it now. */
-export const SummarySchema = z
-  .object({
-    headline: z.string().trim().min(1).max(240),
-    gist: z.array(Claim).min(1).max(3),
-    new_since: z.array(Claim).max(5).default([]),
-    key_developments: z.array(Claim).max(6).default([]),
-    context_significance: z.array(Claim).max(4).default([]),
-    perspectives: z.array(Claim).max(5).default([]),
-    whats_next: z.array(Claim).max(4).default([]),
-  })
-  .strict();
+const briefShape = {
+  headline: z.string().trim().min(1).max(240),
+  gist: z.array(Claim).min(1).max(3),
+  new_since: z.array(Claim).max(5).default([]),
+  key_developments: z.array(Claim).max(6).default([]),
+  context_significance: z.array(Claim).max(4).default([]),
+  perspectives: z.array(Claim).max(5).default([]),
+  whats_next: z.array(Claim).max(4).default([]),
+};
+
+/** The brief alone: what the model has to get right for the brief to stand. */
+export const BriefSchema = z.object(briefShape).strict();
+
+/**
+ * A brief as it is kept: the brief and the places that came with it. The places are
+ * read leniently, so a malformed one never invalidates the brief it came with.
+ */
+export const SummarySchema = z.object({ ...briefShape, places: z.array(FoundPlaceSchema).default([]) }).strict();
 
 /** The executive summary that came before the brief. Kept so that old briefs still read. */
 export const LegacySummarySchema = z
@@ -320,7 +341,12 @@ export function parseSummary(text: string, allowedIds: Set<number>): BriefConten
     if (err instanceof SummaryValidationError) throw err;
     throw new SummaryValidationError(`Output is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
   }
-  const parsed = SummarySchema.safeParse(data);
+  const obj = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  // The places are read before the brief is checked: a place that does not fit must never
+  // cost the reader the brief it came with.
+  const places = parseBriefPlaces(obj.places, allowedIds);
+  const { places: _places, ...brief } = obj;
+  const parsed = BriefSchema.safeParse(brief);
   if (!parsed.success) {
     const issues = parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.') || 'value'}: ${i.message}`);
     throw new SummaryValidationError(`Output does not match the summary schema: ${issues.join('; ')}`);
@@ -335,7 +361,7 @@ export function parseSummary(text: string, allowedIds: Set<number>): BriefConten
   if (unknown.size) {
     throw new SummaryValidationError(`Output cites articles that were not provided: ${[...unknown].join(', ')}`);
   }
-  return summary;
+  return { ...summary, places };
 }
 
 /** Read a stored brief or executive summary back, whichever it is. */

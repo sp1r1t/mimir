@@ -7,25 +7,19 @@ import {
   type SummaryStory,
   type UsedArticle,
 } from '../summaries/summary.js';
+import { NamedPlaceSchema, placeKey, toFoundPlace, type FoundPlace } from './schema.js';
 
 /** Bump whenever the instructions, the input layout, or the output schema change. */
 export const PLACES_PROMPT_VERSION = 'places/2';
 
-export const PLACE_KINDS = ['city', 'town', 'country', 'region', 'other'] as const;
-export type PlaceKind = (typeof PLACE_KINDS)[number];
-
-/** A place as the model named it. The coordinates are not the model's to give. */
-export interface FoundPlace {
-  name: string;
-  kind: PlaceKind;
-  country: string | null;
-  /** ISO 3166-1 alpha-2, when the articles place it in a country. */
-  countryCode: string | null;
-  /** The name to look up in the gazetteer, made unambiguous by the model. */
-  query: string | null;
-  role: string | null;
-  sources: number[];
-}
+export {
+  PLACE_KINDS,
+  geocodeKey,
+  placeKey,
+  type FoundPlace,
+  type NamedPlace,
+  type PlaceKind,
+} from './schema.js';
 
 export interface PreparedPlacesPrompt {
   system: string;
@@ -81,63 +75,13 @@ export function preparePlacesPrompt(
 
 // ---- Output schema and validation -------------------------------------------------
 
-/** A field the model may leave empty; an empty string means "not stated". */
-const optionalText = (max: number) =>
-  z
-    .string()
-    .trim()
-    .max(max)
-    .nullish()
-    .transform((v) => (v ? v : null))
-    .catch(null);
-
-/** A two-letter country code, or nothing when the model left it out or got it wrong. */
-const countryCode = z
-  .string()
-  .trim()
-  .nullish()
-  .transform((v) => {
-    const code = v?.toLowerCase();
-    return code && /^[a-z]{2}$/.test(code) ? code : null;
-  })
-  .catch(null);
-
-const Place = z
-  .object({
-    name: z.string().trim().min(1).max(120),
-    kind: z.enum(PLACE_KINDS).catch('other'),
-    country: optionalText(120),
-    country_code: countryCode,
-    query: optionalText(160),
-    role: optionalText(200),
-    sources: z.array(z.number().int().positive()).min(1).max(20),
-  })
-  .strict();
-
-export const PlacesSchema = z.object({ places: z.array(Place).max(12) }).strict();
+export const PlacesSchema = z.object({ places: z.array(NamedPlaceSchema).max(12) }).strict();
 
 export class PlacesValidationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'PlacesValidationError';
   }
-}
-
-/** The name a place is filed under, so the same place is not listed twice. */
-export function placeKey(name: string, country: string | null): string {
-  const n = name.trim().toLowerCase().replace(/\s+/g, ' ');
-  const c = country?.trim().toLowerCase() ?? '';
-  return c ? `${n}|${c}` : n;
-}
-
-/**
- * The key of a cached gazetteer answer. The kind and the country are part of it: the
- * gazetteer is asked differently for a city and for a region, and the country decides
- * which of several places of the same name is meant.
- */
-export function geocodeKey(query: string, kind: PlaceKind, countryCode: string | null): string {
-  const q = query.trim().toLowerCase().replace(/\s+/g, ' ');
-  return `${q}|${kind}|${countryCode?.toLowerCase() ?? ''}`;
 }
 
 /** Parse model output. Every cited id must be one of the articles the model was given. */
@@ -164,15 +108,7 @@ export function parsePlaces(text: string, allowedIds: Set<number>): FoundPlace[]
     const key = placeKey(p.name, p.country ?? null);
     if (seen.has(key)) continue;
     seen.add(key);
-    places.push({
-      name: p.name,
-      kind: p.kind,
-      country: p.country?.trim() || null,
-      countryCode: p.country_code?.trim().toLowerCase() || null,
-      query: p.query?.trim() || null,
-      role: p.role?.trim() || null,
-      sources: [...new Set(p.sources)].sort((a, b) => a - b),
-    });
+    places.push(toFoundPlace(p));
   }
   return places;
 }

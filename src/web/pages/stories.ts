@@ -576,7 +576,7 @@ function mapPanel(app: App, s: StoryDetail, open: boolean): SafeHtml {
     state === 'pending'
       ? html`<p class="badge-line"><span class="badge pending">Queued</span> <span class="muted">The places of this story are being looked up.</span></p>`
       : state === 'running'
-        ? html`<p class="badge-line"><span class="badge pending">Looking</span> <span class="muted">Naming the places, then looking each one up.</span></p>`
+        ? html`<p class="badge-line"><span class="badge pending">Looking</span> <span class="muted">Looking each place up in the gazetteer.</span></p>`
         : state === 'failed'
           ? html`<p class="error-text">The lookup failed: ${s.placesError ?? 'unknown error'}</p>`
           : state === 'stale'

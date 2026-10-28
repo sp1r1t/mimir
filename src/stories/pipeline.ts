@@ -5,11 +5,11 @@ import type { Job, JobQueue } from '../jobs/queue.js';
 import { JobError, JobWorker } from '../jobs/worker.js';
 import type { Logger } from '../logger.js';
 import type { Geocoder } from '../places/geocoder.js';
-import { geocodeKey, parsePlaces, PlacesValidationError, preparePlacesPrompt, type PlaceKind } from '../places/places.js';
+import { geocodeKey, parsePlaces, PlacesValidationError, preparePlacesPrompt, type FoundPlace, type PlaceKind } from '../places/places.js';
 import { CircuitBreaker } from '../pipeline.js';
 import type { ProfileRepository } from '../profile/repository.js';
 import { SummaryProviderError, type SummaryProvider, type SummaryTrigger } from '../summaries/provider.js';
-import { gistTexts, parseSummary, preparePrompt, selectArticles, SUMMARY_PROMPT_VERSION, SummaryValidationError } from '../summaries/summary.js';
+import { gistTexts, isBrief, parseSummary, preparePrompt, selectArticles, SUMMARY_PROMPT_VERSION, SummaryValidationError, type BriefContent } from '../summaries/summary.js';
 import { backoffMs, sleep } from '../util/backoff.js';
 import { iso, systemClock, type Clock } from '../util/time.js';
 import { assessStory, priorityAt } from './assessment.js';
@@ -185,8 +185,9 @@ export class StoryPipeline {
   }
 
   placesPausedReason(): string | null {
+    // The gazetteer needs no model: a brief that names its places can be looked up even
+    // when no provider for naming them is configured.
     if (!this.d.config.places.enabled) return 'place lookup is turned off';
-    if (!this.d.places.isConfigured()) return this.d.places.configurationHint() ?? 'place lookup is not configured';
     return null;
   }
 
@@ -231,7 +232,9 @@ export class StoryPipeline {
     const s = this.d.stories.item(storyId);
     if (!s || s.status !== 'active') return { queued: false, message: 'Story not found.' };
     if (!this.d.config.places.enabled) return { queued: false, message: 'Place lookup is turned off.' };
-    if (!this.d.places.isConfigured()) {
+    // A brief that names its places needs no model; only a brief from before that
+    // change has to be asked again.
+    if (!this.placesFromBrief(storyId) && !this.d.places.isConfigured()) {
       return { queued: false, message: this.d.places.configurationHint() ?? 'No place provider configured.' };
     }
     const payload: PlacesPayload = { storyId, trigger: 'manual', force: true };
@@ -492,7 +495,7 @@ export class StoryPipeline {
     }
     this.summaryBreaker.success();
     const usage = { model: result.model, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, durationMs: result.durationMs };
-    let content;
+    let content: BriefContent;
     try {
       content = parseSummary(result.text, new Set(selected.map((a) => a.id)));
     } catch (err) {
@@ -516,13 +519,29 @@ export class StoryPipeline {
     });
     st.recordAttempt({ ...attempt, ...usage, outcome: summaryId ? 'ok' : 'discarded', error: summaryId ? null : 'Story articles changed during generation', summaryId });
     if (!summaryId) throw new JobError('story articles changed during generation', { retryable: true, defer: true, delayMs: 0 });
+    // The brief named the places. The gazetteer is free, so the map is filled from them
+    // without asking the model a second time.
+    if (content.places.length) this.enqueuePlaces(storyId, trigger);
+  }
+
+  /** Queue the gazetteer lookup for the places a brief named. */
+  private enqueuePlaces(storyId: number, trigger: SummaryTrigger): void {
+    if (!this.d.config.places.enabled) return;
+    const payload: PlacesPayload = { storyId, trigger };
+    // A lookup that follows an automatic brief waits behind the reader's own requests.
+    const priority = trigger === 'manual' ? MANUAL_PRIORITY : 10;
+    const opts = { priority, maxAttempts: this.d.config.summaries.maxAttempts };
+    if (!this.d.queue.enqueue(STORY_PLACES, `story:${storyId}`, payload, opts)) return;
+    this.d.stories.setPlacesState(storyId, 'pending');
+    this.placesWorker.notify();
   }
 
   // ---- Places -------------------------------------------------------------------------
 
   /**
-   * Name the places the story is about, then look each name up in the gazetteer. A name
-   * that the gazetteer does not know is kept as a name, without a pin.
+   * Look the places of the story up in the gazetteer. The names come from the brief when
+   * it names them; only a brief written before that needs a separate pass to name them.
+   * A name that the gazetteer does not know is kept as a name, without a pin.
    */
   private async handlePlaces(job: Job<PlacesPayload>, signal: AbortSignal): Promise<void> {
     const st = this.d.stories;
@@ -530,42 +549,15 @@ export class StoryPipeline {
     if (storyId == null) return;
     const cfg = this.d.config.places;
     if (!cfg.enabled) return st.setPlacesState(storyId, 'none');
-    const input = st.summaryInput(storyId);
-    if (!input || !input.articles.length) return st.setPlacesState(storyId, 'none');
-    const selected = selectArticles(input.articles, cfg.maxArticles);
-    const prompt = preparePlacesPrompt(input.story, selected, {
-      maxInputChars: cfg.maxInputChars,
-      language: this.d.config.summaries.language,
-    });
 
-    const provider = this.d.places;
-    const capacity = await provider.capacity('manual', signal);
-    if (!capacity.ok) {
-      st.setPlacesState(storyId, 'pending', capacity.reason);
-      const until = capacity.retryAt ? Math.max(60_000, Date.parse(capacity.retryAt) - Date.now()) : 15 * 60_000;
-      throw new JobError(capacity.reason, { retryable: true, defer: true, delayMs: until });
+    let found = this.placesFromBrief(storyId);
+    if (!found.length) {
+      const named = await this.namePlaces(storyId, signal);
+      if (!named) return;
+      found = named;
     }
 
     st.setPlacesState(storyId, 'running');
-    let result;
-    try {
-      result = await provider.generate({ system: prompt.system, user: prompt.user, maxOutputTokens: cfg.maxOutputTokens }, signal);
-    } catch (err) {
-      if (signal.aborted) throw err;
-      const e = err instanceof SummaryProviderError ? err : new SummaryProviderError(err instanceof Error ? err.message : String(err), 'unavailable');
-      st.setPlacesState(storyId, 'pending', e.message);
-      throw new JobError(e.message, { retryable: true, delayMs: e.retryAfterMs ?? undefined });
-    }
-
-    let found;
-    try {
-      found = parsePlaces(result.text, new Set(selected.map((a) => a.id)));
-    } catch (err) {
-      if (!(err instanceof PlacesValidationError)) throw err;
-      st.setPlacesState(storyId, 'pending', err.message);
-      throw new JobError(err.message, { retryable: true });
-    }
-
     const places = [];
     const failures: string[] = [];
     for (const p of found) {
@@ -600,6 +592,64 @@ export class StoryPipeline {
     st.savePlaces(storyId, places);
     if (failures.length) {
       st.setPlacesState(storyId, 'ready', `The gazetteer could not be reached for ${failures.length} place(s): ${failures.join('; ')}`);
+    }
+  }
+
+  /** The places the current brief names, if it names any. */
+  private placesFromBrief(storyId: number): FoundPlace[] {
+    const current = this.d.stories.currentSummary(storyId);
+    if (!current) return [];
+    const content = current.content;
+    return isBrief(content) ? content.places : [];
+  }
+
+  /**
+   * Ask the model to name the places, for a brief that does not name them itself: a
+   * brief written before the brief and the places came out of one answer.
+   */
+  private async namePlaces(storyId: number, signal: AbortSignal): Promise<FoundPlace[] | null> {
+    const st = this.d.stories;
+    const cfg = this.d.config.places;
+    const input = st.summaryInput(storyId);
+    if (!input || !input.articles.length) {
+      st.setPlacesState(storyId, 'none');
+      return null;
+    }
+    const selected = selectArticles(input.articles, cfg.maxArticles);
+    const prompt = preparePlacesPrompt(input.story, selected, {
+      maxInputChars: cfg.maxInputChars,
+      language: this.d.config.summaries.language,
+    });
+
+    const provider = this.d.places;
+    if (!provider.isConfigured()) {
+      st.setPlacesState(storyId, 'failed', provider.configurationHint() ?? 'No place provider configured.');
+      return null;
+    }
+    const capacity = await provider.capacity('manual', signal);
+    if (!capacity.ok) {
+      st.setPlacesState(storyId, 'pending', capacity.reason);
+      const until = capacity.retryAt ? Math.max(60_000, Date.parse(capacity.retryAt) - Date.now()) : 15 * 60_000;
+      throw new JobError(capacity.reason, { retryable: true, defer: true, delayMs: until });
+    }
+
+    st.setPlacesState(storyId, 'running');
+    let result;
+    try {
+      result = await provider.generate({ system: prompt.system, user: prompt.user, maxOutputTokens: cfg.maxOutputTokens }, signal);
+    } catch (err) {
+      if (signal.aborted) throw err;
+      const e = err instanceof SummaryProviderError ? err : new SummaryProviderError(err instanceof Error ? err.message : String(err), 'unavailable');
+      st.setPlacesState(storyId, 'pending', e.message);
+      throw new JobError(e.message, { retryable: true, delayMs: e.retryAfterMs ?? undefined });
+    }
+
+    try {
+      return parsePlaces(result.text, new Set(selected.map((a) => a.id)));
+    } catch (err) {
+      if (!(err instanceof PlacesValidationError)) throw err;
+      st.setPlacesState(storyId, 'pending', err.message);
+      throw new JobError(err.message, { retryable: true });
     }
   }
 

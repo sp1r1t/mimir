@@ -282,6 +282,36 @@ describe('summary prompt and validation', () => {
     expect((JSON.parse(same.user).articles as { new_since_last_brief?: boolean }[]).every((a) => !a.new_since_last_brief)).toBe(true);
     expect(same.system).toContain('no article is marked "new_since_last_brief"');
   });
+
+  it('asks for the places in the same answer as the brief, and reads them leniently', () => {
+    const p = preparePrompt(story, [article(1)], { maxInputChars: 1800, language: 'English' });
+    expect(p.system).toContain('"places"');
+    expect(p.system).toMatch(/no coordinates/);
+
+    const named = {
+      ...validSummary([3]),
+      places: [{ name: 'Gaza', kind: 'city', country: 'Palestine', country_code: 'PS', query: 'Gaza Strip', role: 'where it happened', sources: [3] }],
+    };
+    const s = parseSummary(JSON.stringify(named), new Set([1, 2, 3]));
+    expect(s.places).toEqual([
+      { name: 'Gaza', kind: 'city', country: 'Palestine', countryCode: 'ps', query: 'Gaza Strip', role: 'where it happened', sources: [3] },
+    ]);
+
+    // A place that does not fit is dropped, and the brief it came with is still good.
+    const broken = {
+      ...validSummary([3]),
+      places: [
+        { name: 'Nowhere', kind: 'city', sources: [3] },
+        { name: 'Elsewhere', kind: 'planet', sources: [3] },
+        { kind: 'city', sources: [3] },
+        { name: 'Unknown', kind: 'city', sources: [99] },
+      ],
+    };
+    const lenient = parseSummary(JSON.stringify(broken), new Set([1, 2, 3]));
+    expect(lenient.gist).toHaveLength(1);
+    expect(lenient.places.map((pl) => pl.name)).toEqual(['Nowhere', 'Elsewhere']);
+    expect(lenient.places[1]!.kind).toBe('other');
+  });
 });
 
 // ---- Story assessment ------------------------------------------------------------------

@@ -156,8 +156,9 @@ a key.
 - **Map:** the **Map** button in the story header opens a card with the places the story
   is about on an OpenStreetMap map, and a list of the same places with the articles that
   mention them. A pin's popup links to the articles that name the place. **Full screen**
-  gives the map the whole screen. **Find places** looks them up; **Look again** refreshes
-  them. See **Places and the map** below.
+  gives the map the whole screen. The places come with the brief; **Find places** looks
+  up the ones a brief does not name, **Look again** refreshes them. See **Places and the
+  map** below.
 - **Articles:** sort by rank, personal relevance, publication or discovery; search title,
   summary, text and author; filter by source, category, relevance range, date,
   processing status, saved state, feedback or article type. Clear filters to see all
@@ -291,14 +292,17 @@ mention gets a list that scrolls.
 
 
 
-**Where the places come from.** Two steps, and they are kept apart on purpose:
+**Where the places come from.** Two steps, and only the first one costs anything:
 
-1. *Reading the names.* A separate model pass over the story's articles asks one question:
-   which cities, towns, countries or regions is this story about? The prompt asks for
-   names only and explicitly forbids coordinates, because a model asked for coordinates
-   invents plausible ones. The answer must be one JSON object matching a strict schema,
-   may cite only articles it was given, and is rejected and retried otherwise. The
-   prompt is versioned as `places/2`, and the version is stored with the answer.
+1. *Reading the names.* The brief's answer names the places as well as writing the
+   brief: one model pass over the story's articles answers both questions, so the
+   articles are sent once and the places ride along in the same reply. The prompt asks
+   for names only and explicitly forbids coordinates, because a model asked for
+   coordinates invents plausible ones. The places are read leniently: a place that does
+   not fit is dropped, and one that cites an article the model was not given loses that
+   citation, but the brief it came with is never lost. A brief written before this
+   change carries no places, and asking for its map runs the separate name-reading pass
+   instead, whose prompt is versioned as `places/2`.
 2. *Finding them on the map.* Each name is looked up in the OpenStreetMap gazetteer
    (Nominatim), one request a second at most, with an identifying `User-Agent`. The kind
    of place narrows the search, so a city is not answered with a street of the same name
@@ -327,14 +331,18 @@ it is not worth a pin, so the prompt asks for the places the story is actually a
 gives each place a role in the story. The map opens on the places where things happened;
 a country is drawn too, but it does not pull the view away from the city.
 
-**When it runs.** Nothing happens on its own: a story's places are looked up when you ask
-for them with **Find places** on the story page, and **Look again** does it again. A
-lookup that is already running is not started twice. When a story develops, its places
-are marked outdated, and the card says that the map may be behind the news; the map
-itself keeps the previous answer until you refresh it.
+**When it runs.** The names come with the brief, so a brief that names its places
+brings its map along: the lookup starts by itself once the brief is written. A story
+whose brief names no place has no map until you ask for one with **Find places** on the
+story page, and **Look again** does it again. A lookup that is already running is not
+started twice. When a story develops, its places are marked outdated, and the card says
+that the map may be behind the news; the map itself keeps the previous answer until you
+refresh it.
 
-**Cost.** The name-reading pass uses the same provider and the same allowance rules as
-the summaries, but it is only ever run on request. Geocoding is free, but the public
+**Cost.** The names are part of the brief's answer, so they cost a few hundred output
+tokens and no second call: the articles are not sent twice. Only a brief written before
+that change needs the separate name-reading pass, which uses the same provider and the
+same allowance rules as the summaries. Geocoding is free, but the public
 Nominatim instance asks for at most one request a second and for a `User-Agent` that
 identifies the caller; `GEOCODER_MIN_INTERVAL_MS` enforces that, and
 `GEOCODER_USER_AGENT` should say who you are.

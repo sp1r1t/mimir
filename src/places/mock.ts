@@ -1,3 +1,4 @@
+import type { PlaceName } from './schema.js';
 import { sleep } from '../util/backoff.js';
 import {
   SummaryProviderError,
@@ -10,14 +11,7 @@ import {
 
 export type MockPlacesMode = 'ok' | 'empty' | 'invalid' | ProviderErrorKind;
 
-export interface MockPlace {
-  name: string;
-  kind: 'city' | 'town' | 'country' | 'region' | 'other';
-  country?: string;
-  countryCode?: string;
-  query?: string;
-  role?: string;
-}
+export type MockPlace = PlaceName;
 
 /**
  * Offline provider for the place lookup. It answers with a fixed list of places, each
