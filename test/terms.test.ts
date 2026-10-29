@@ -4,13 +4,14 @@ import { parseHTML } from 'linkedom';
 import type { ClassificationArticle, ClassificationResult, Classifier } from '../src/classification/types.js';
 import type { InterestProfile } from '../src/profile/schema.js';
 import { sha256, stableStringify } from '../src/util/hash.js';
-import { parseTerms, prepareTermsPrompt, TermsValidationError } from '../src/terms/terms.js';
-import { termKey } from '../src/terms/schema.js';
+import { dropFragmentTerms, parseTerms, prepareTermsPrompt, TermsValidationError } from '../src/terms/terms.js';
+import { termKey, type FoundTerm } from '../src/terms/schema.js';
 import { MockTermsProvider } from '../src/terms/mock.js';
 import { Wikipedia, type Encyclopedia, type TermArticle } from '../src/terms/wikipedia.js';
 import { MockSummaryProvider } from '../src/summaries/mock.js';
 import type { MatchArticle, MatchCandidate, MatchJudgement, LevelAnswer, StoryMatcher } from '../src/stories/matcher.js';
 import { buildServer } from '../src/web/server.js';
+import { markTerms, type MarkableTerm } from '../src/web/terms.js';
 import { FeedServer, makeApp, waitFor, type TestApp } from './helpers.js';
 
 interface Item {
@@ -383,6 +384,27 @@ describe('the terms of a story', () => {
     expect(s.terms[0]!.summary).toMatch(/Canadian artificial intelligence company/);
   });
 
+  it('drops a term the articles only name inside another word', async () => {
+    // The brief names "ICE", but the articles only say "office".
+    const summaries = new MockSummaryProvider('ok', 0, [], [
+      { name: 'Cohere', kind: 'organisation', wiki: 'Cohere', role: 'the company' },
+      { name: 'ICE', kind: 'acronym', wiki: 'ICE', role: 'the agency' },
+    ]);
+    const terms = new MockTermsProvider();
+    const encyclopedia = new FakeEncyclopedia();
+    encyclopedia.articles['Cohere'] = COHERE;
+    const app = await setup({ summaries, terms, encyclopedia });
+    await publish([{ guid: 'a', title: 'Cohere met in the Barcelona office', host: 'wire.example.com', description: 'Cohere met in the Barcelona office.' }]);
+    const story = storyOf('a');
+
+    app.storyPipeline.requestSummary(story.id);
+    await waitFor(() => app.stories.get(story.id)!.termsState === 'ready');
+
+    const s = app.stories.get(story.id)!;
+    expect(s.terms.map((x) => x.name)).toEqual(['Cohere']);
+    expect(encyclopedia.calls.map((c) => c.name)).not.toContain('ICE');
+  });
+
   it('names the terms itself when the brief names none', async () => {
     const terms = new MockTermsProvider('ok', [{ name: 'Cohere', kind: 'organisation', wiki: 'Cohere', role: 'the company' }], 0);
     const encyclopedia = new FakeEncyclopedia();
@@ -509,5 +531,63 @@ describe('the terms of a story', () => {
     const { document } = parseHTML(page.body);
     expect(document.body.textContent).toContain('Cohere');
     expect(document.body.textContent).toContain('Canadian artificial intelligence company');
+  });
+});
+
+describe('the word boundary of a term', () => {
+  const ICE = { key: 'ice', name: 'ICE', description: 'Federal law enforcement agency', summary: null };
+  const OPENAI = { key: 'openai', name: 'OpenAI', description: 'An AI company', summary: null };
+  const BP = { key: 'bp', name: 'BP', description: 'An oil company', summary: null };
+
+  /** The terms that were marked in a text, with the text that was marked. */
+  function marked(text: string, terms: MarkableTerm[]): string[] {
+    const { document } = parseHTML(`<body>${markTerms(text, terms).value}</body>`);
+    return [...document.querySelectorAll('button.term')].map((b) => b.textContent ?? '');
+  }
+
+  it('does not mark a term inside another word', () => {
+    expect(marked('the Barcelona office and a practice of shipping code', [ICE])).toEqual([]);
+  });
+
+  it('marks the term when it stands on its own', () => {
+    expect(marked('the ICE agents were there', [ICE])).toEqual(['ICE']);
+  });
+
+  it('does not mark a term that is glued to a word', () => {
+    expect(marked('a ReopenAI model', [OPENAI])).toEqual([]);
+  });
+
+  it('marks a term that carries a possessive', () => {
+    expect(marked("OpenAI's model", [OPENAI])).toEqual(["OpenAI's"]);
+  });
+
+  it('matches a short name only as it is written', () => {
+    expect(marked('the bp model and the BP model', [BP])).toEqual(['BP']);
+  });
+});
+
+describe('a term that is only part of another word', () => {
+  const term = (name: string): FoundTerm => ({ name, kind: 'acronym', wiki: null, role: null, sources: [1] });
+
+  it('drops a term the articles only name inside another word', () => {
+    const terms = [term('ice'), term('Thoughtworks')];
+    const kept = dropFragmentTerms(terms, ['the team met in our Barcelona office', 'Thoughtworks wrote it']);
+    expect(kept.map((t) => t.name)).toEqual(['Thoughtworks']);
+  });
+
+  it('keeps a term the articles name as a word of its own', () => {
+    const kept = dropFragmentTerms([term('ICE')], ['the ICE agents were there']);
+    expect(kept.map((t) => t.name)).toEqual(['ICE']);
+  });
+
+  it('keeps a term the articles do not name at all', () => {
+    // The model may know the term under another spelling.
+    const kept = dropFragmentTerms([term('U.S. Immigration and Customs Enforcement')], ['the agents were there']);
+    expect(kept.map((t) => t.name)).toEqual(['U.S. Immigration and Customs Enforcement']);
+  });
+
+  it('keeps a short name, which cannot be judged', () => {
+    const kept = dropFragmentTerms([term('BP')], ['the bp well and the BP well']);
+    expect(kept.map((t) => t.name)).toEqual(['BP']);
   });
 });

@@ -11,7 +11,7 @@ import type { ProfileRepository } from '../profile/repository.js';
 import { SummaryProviderError, type SummaryProvider, type SummaryTrigger } from '../summaries/provider.js';
 import { gistTexts, isBrief, parseSummary, preparePrompt, selectArticles, SUMMARY_PROMPT_VERSION, SummaryValidationError, type BriefContent } from '../summaries/summary.js';
 import { termKey, type FoundTerm, type TermKind } from '../terms/schema.js';
-import { firstSentences, parseExplanations, parseTerms, prepareExplainPrompt, prepareTermsPrompt, TermsValidationError } from '../terms/terms.js';
+import { dropFragmentTerms, firstSentences, parseExplanations, parseTerms, prepareExplainPrompt, prepareTermsPrompt, TermsValidationError } from '../terms/terms.js';
 import type { Encyclopedia } from '../terms/wikipedia.js';
 import { backoffMs, sleep } from '../util/backoff.js';
 import { iso, systemClock, type Clock } from '../util/time.js';
@@ -769,6 +769,14 @@ export class StoryPipeline {
       const asked = await this.nameTerms(storyId, signal);
       if (!asked) return;
       named = asked;
+    }
+
+    // A term that the articles only name inside another word is not a term at all.
+    const input = st.summaryInput(storyId);
+    if (input) {
+      const texts = input.articles.flatMap((a) => [a.title ?? '', a.summaryText ?? '', a.contentText ?? '']);
+      named = dropFragmentTerms(named, texts);
+      if (!named.length) return st.setTermsState(storyId, 'none');
     }
 
     st.setTermsState(storyId, 'running');

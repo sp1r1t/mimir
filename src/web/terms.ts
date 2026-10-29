@@ -44,9 +44,12 @@ function segment(text: string, terms: MarkableTerm[]): Segment[] {
   const usable = markable(terms);
   if (!usable.length || !text) return [{ text, key: null, title: null }];
   // Short names are matched as they are written: "AI" would otherwise mark every "ai".
+  // The "u" flag is what makes "\p{L}" a letter class at all. Without it the class holds
+  // the literal letters p, {, L, } and N, and the word boundary below lets "ice" match
+  // inside "office" — which is how the term ICE ended up marked in the middle of a word.
   const buckets = [
-    { list: usable.filter((t) => t.name.length >= 3), flags: 'gi' },
-    { list: usable.filter((t) => t.name.length < 3), flags: 'g' },
+    { list: usable.filter((t) => t.name.length >= 3), flags: 'giu' },
+    { list: usable.filter((t) => t.name.length < 3), flags: 'gu' },
   ];
   const held = new Map<string, Segment>();
   let work = text;
@@ -55,13 +58,16 @@ function segment(text: string, terms: MarkableTerm[]): Segment[] {
     const names = bucket.list.map((t) => t.name.trim()).filter(Boolean);
     if (!names.length) continue;
     const pattern = new RegExp(
-      `(?<![\\p{L}\\p{N}])(?:${names.map(escapeRegExp).join('|')})(?![\\p{L}\\p{N}])`,
+      `(?<![\\p{L}\\p{N}])(?:${names.map(escapeRegExp).join('|')})(?:['’]s)?(?![\\p{L}\\p{N}])`,
       bucket.flags,
     );
     work = work.replace(pattern, (match) => {
-      const found = bucket.list.find((t) => t.name.trim().toLowerCase() === match.toLowerCase());
+      // A possessive belongs to the term, but it is not part of its name.
+      const possessive = match.match(/['’]s$/)?.[0] ?? '';
+      const name = possessive ? match.slice(0, match.length - possessive.length) : match;
+      const found = bucket.list.find((t) => t.name.trim().toLowerCase() === name.toLowerCase());
       const id = `\u0000${held.size}\u0000`;
-      held.set(id, { text: match, key: found?.key ?? match.toLowerCase(), title: tooltip(found) });
+      held.set(id, { text: match, key: found?.key ?? name.toLowerCase(), title: tooltip(found) });
       return id;
     });
   }

@@ -406,7 +406,9 @@ and the story page lists every term with its explanation in full.
 browser: a term is explained once and reused in every story that mentions it. The
 **Glossary** page in the navigation lists everything Mimir knows, grouped by kind
 (organisation, product, person, project, concept, acronym), with the number of stories
-that mention each term.
+that mention each term. A name is only a term when it stands on its own: "ICE" is a
+button, the "ice" inside "office" is not, and a term the articles only ever name inside
+another word is dropped instead of being filed.
 
 **Where the names come from.** The brief's answer names the terms as well as writing
 the brief, exactly as it names the places: one model pass over the story's articles

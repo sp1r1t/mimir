@@ -141,6 +141,24 @@ are.
 **What it means for later work.** Every page that waits for something watches for it.
 Refresh is a failure of the interface, not a step in the flow.
 
+### D7 — A term is marked only when it stands on its own
+
+**What.** A name in the glossary becomes a button only where it stands on its own in the
+text: "ICE" is a button, "office" and "practice" are not. A term the articles only ever
+name inside another word is dropped instead of being filed.
+
+**Why.** The glossary is shared by every story, so a name picked up once is offered
+everywhere. A mark that lands in the middle of a word is a mark on nothing: the reader
+taps "ice" inside "office" and is given a card about a law enforcement agency the story
+never mentioned.
+
+**How it shows.** Nothing at all — the word stays a word. The check is the same for the
+whole glossary, not for one story, because the glossary is shared.
+
+**What it means for later work.** Any mark in a text has to know where words begin and
+end. Unicode letter classes need the `u` flag to be letter classes at all: without it
+`\p{L}` is the literal letters p, {, L, } and N, and "ice" is a word inside "office".
+
 ---
 
 ## The visual language
@@ -195,6 +213,10 @@ shows what it does. The action is never behind a hidden gesture.
 
 **Nothing is behind a login.** There is one account, one password, and no second
 surface. Anything that needs doing can be done from the dashboard on the phone.
+
+**A word is a word.** A mark in a text knows where words begin and end. A name is only
+marked where it stands on its own, and a term that the text only names inside another
+word is not a term (D7).
 
 ---
 

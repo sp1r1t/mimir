@@ -181,6 +181,28 @@ export function parseExplanations(text: string): { name: string; explanation: st
 }
 
 /**
+ * A term that the articles only ever name as part of another word is not a term: "ice"
+ * out of "office", "ave" out of "have". Such a term is dropped — but only when the
+ * articles say so. A term the articles do not name at all is left alone, because the
+ * model may know it under another spelling ("U.S. Immigration and Customs Enforcement"
+ * for "ICE").
+ */
+export function dropFragmentTerms(terms: FoundTerm[], texts: string[]): FoundTerm[] {
+  const joined = texts.filter(Boolean).join('\n');
+  if (!joined.trim()) return terms;
+  return terms.filter((t) => {
+    const name = t.name.trim();
+    // Two letters are too short to judge: "an" is part of many words.
+    if (name.length < 3) return true;
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const anywhere = new RegExp(escaped, 'iu');
+    if (!anywhere.test(joined)) return true;
+    const whole = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'giu');
+    return whole.test(joined);
+  });
+}
+
+/**
  * The first sentences of a text, so that an explanation stays an explanation: one or
  * two sentences, and never more than the reader asked for.
  */
