@@ -853,3 +853,14 @@ function ensureElapsedTicker() {
 }
 
 ensureElapsedTicker();
+
+// The floating rewrite button sits just under the top bar. That bar is a different
+// height on every screen, so the page measures it and tells the stylesheet.
+function setHeaderHeight() {
+  const top = document.querySelector('.top');
+  if (!top) return;
+  document.documentElement.style.setProperty('--header-h', `${Math.round(top.getBoundingClientRect().height)}px`);
+}
+
+setHeaderHeight();
+addEventListener('resize', setHeaderHeight);

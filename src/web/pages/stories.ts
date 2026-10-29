@@ -130,6 +130,24 @@ function storySave(s: Pick<StoryListItem, 'id' | 'savedAt'>, labelled = false): 
   </form>`;
 }
 
+/**
+ * The circle arrow in the top right corner: it rewrites the brief and stays in reach,
+ * so an outdated brief can be rewritten without walking through the whole of it.
+ */
+function rewriteButton(s: StoryDetail): SafeHtml | null {
+  if (!s.summary) return null;
+  const running = s.summaryState === 'running';
+  const waiting = s.summaryState === 'pending';
+  if (running || waiting || s.summaryState === 'failed') return null;
+  const stale = s.summaryState === 'stale';
+  const help = stale ? 'This brief is outdated. Rewrite it.' : 'Rewrite the brief.';
+  return html`<form class="rewrite-corner" method="post" action="/stories/${s.id}/summary" data-story-action="summary">
+    <button type="submit" class="rewrite-btn ${stale ? 'stale' : ''}" title="${help}" aria-label="${help}">
+      <span class="rewrite-icon" aria-hidden="true">&#8635;</span>
+    </button>
+  </form>`;
+}
+
 const SUMMARY_BADGE: Record<SummaryState, [string, string] | null> = {
   none: null,
   pending: ['pending', 'Brief queued'],
@@ -403,8 +421,13 @@ function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
   const waitReason = appLimited
     ? `Mimir's automatic-summary limit is reached (${budget.used}/${budget.limit} provider attempts in the past 24 hours, including retries). This is separate from the MiniMax plan allowance.`
     : s.summaryError;
-  const action = html`<form method="post" action="/stories/${s.id}/summary" class="inline" data-story-action="summary">
-    <button type="submit" class="${s.summary ? 'secondary' : ''}" ${configured && !running ? null : html`disabled`}>${running ? 'Writing…' : waiting ? 'Write now' : s.summaryState === 'failed' ? 'Retry the brief' : s.summary ? 'Rewrite the brief' : 'Write the brief'}</button>
+  // The panel only carries the button for a brief that is not there yet, or that could not
+  // be written. A brief that exists is rewritten from the circle arrow in the corner, so
+  // the reader does not have to walk through the whole brief to reach it.
+  const action = s.summary && s.summaryState !== 'failed'
+    ? null
+    : html`<form method="post" action="/stories/${s.id}/summary" class="inline" data-story-action="summary">
+    <button type="submit" class="${s.summary ? 'secondary' : ''}" ${configured && !running ? null : html`disabled`}>${running ? 'Writing…' : waiting ? 'Write now' : s.summaryState === 'failed' ? 'Retry the brief' : 'Write the brief'}</button>
   </form>`;
   const status =
     s.summaryState === 'pending'
@@ -765,6 +788,7 @@ export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOp
   const glossary = app.stories.glossary();
   const body = html`
   <article class="detail story-detail" data-story-id="${s.id}" data-version="${app.stories.storyVersion(s.id)}">
+    ${rewriteButton(s)}
     <header>
       ${seenButton(s)}
       <h1>${markTerms(s.summary?.content.headline ?? s.headline, glossary)}</h1>

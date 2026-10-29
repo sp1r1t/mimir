@@ -6,7 +6,8 @@ Articles about the same event are grouped into stories with their own assessment
 development history and, on a MiniMax M Plan, cited Story Intelligence Briefs.
 One Node.js/TypeScript process runs the web server, feed scheduler, and SQLite-backed
 workers. SQLite FTS5 provides search and story candidates. No external workflow
-service or vector database is required.
+service or vector database is required. The rules the interface follows, and why they
+are what they are, are written down in [DESIGN.md](DESIGN.md).
 
 ## Start with Docker Compose
 
@@ -143,8 +144,11 @@ a key.
 - **Story details:** the Story Intelligence Brief with cited sources and claim status, the
   assessment with the articles behind each score, and a combined article timeline.
   The brief says when it was written, and a rewritten brief leads with what is new since
-  the one before it. The timeline starts at the most recent entry; **Oldest first** /
-  **Newest first** flips it, and the reader's choice is remembered for the next story.
+  the one before it. A brief that exists is rewritten from the circle arrow in the top
+  right corner of the page, which stays in reach while the brief is read; the arrow
+  turns blue when the brief is outdated. The timeline starts at the most recent entry;
+  **Oldest first** / **Newest first** flips it, and the reader's choice is remembered
+  for the next story.
   Every timeline entry carries its number, and that number is what the
   brief's citations refer to. Each timeline entry also shows its role (first report,
   update or additional coverage), discovery feed, original and available discussion
@@ -698,6 +702,10 @@ against a fake server, including subscription verification and error codes. They
 need credentials or access public feeds.
 
 ## Code and extension points
+
+`DESIGN.md` records the design decisions of the interface — what each colour means,
+where a control lives, why the brief is rewritten from the corner — so that later
+features follow the same rules and other projects can borrow them.
 
 ```text
 src/feeds/            parser, conditional fetcher, ingestor, persistent scheduling
