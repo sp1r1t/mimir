@@ -796,7 +796,7 @@ export class StoryPipeline {
       // and one the encyclopedia did not know is not asked again unless a better title
       // came with it.
       if (t.status !== 'pending') continue;
-      const article = await this.lookupTerm(t.name, t.wiki);
+      const article = await this.lookupTerm(t.name, t.wiki, signal);
       if (article) {
         st.explainTerm(t.key, {
           summary: firstSentences(article.extract ?? article.description ?? '', 2),
@@ -929,14 +929,14 @@ export class StoryPipeline {
   }
 
   /** The encyclopedia gets three tries: it is a public service and it says so. */
-  private async lookupTerm(name: string, wiki: string | null) {
+  private async lookupTerm(name: string, wiki: string | null, signal?: AbortSignal) {
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        return await this.d.wikipedia.lookup(name, wiki);
+        return await this.d.wikipedia.lookup(name, wiki, signal);
       } catch (err) {
         lastError = err;
-        if (attempt < 3) await sleep(2000 * attempt);
+        if (attempt < 3) await sleep(2000 * attempt, signal);
       }
     }
     throw lastError instanceof Error ? lastError : new Error(String(lastError));

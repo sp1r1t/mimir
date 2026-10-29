@@ -1,4 +1,4 @@
-import { sleep } from '../util/backoff.js';
+import { parseRetryAfter, sleep } from '../util/backoff.js';
 
 /** What an encyclopedia says about a term. */
 export interface TermArticle {
@@ -24,7 +24,7 @@ export interface WikipediaOptions {
 /** The encyclopedia, as the rest of Mimir uses it. */
 export interface Encyclopedia {
   /** The article that explains a term, or nothing when there is none. */
-  lookup(name: string, hint?: string | null): Promise<TermArticle | null>;
+  lookup(name: string, hint?: string | null, signal?: AbortSignal): Promise<TermArticle | null>;
 }
 
 interface RestSummary {
@@ -63,11 +63,11 @@ export class Wikipedia implements Encyclopedia {
    * The article for a title, or nothing when there is none. A page that only lists
    * several meanings explains nothing, so it is not an answer either.
    */
-  async summary(title: string): Promise<TermArticle | null> {
+  async summary(title: string, signal?: AbortSignal): Promise<TermArticle | null> {
     const wanted = title.trim();
     if (!wanted) return null;
     const url = new URL(`/api/rest_v1/page/summary/${encodeURIComponent(wanted.replace(/ /g, '_'))}`, this.opts.baseUrl);
-    const body = await this.get(url);
+    const body = await this.get(url, 0, signal);
     if (body === null) return null;
     const data = body as RestSummary;
     if (data.type === 'disambiguation') return null;
@@ -89,20 +89,20 @@ export class Wikipedia implements Encyclopedia {
    * The article that explains a term: the title the model gave first, the plain name
    * second, and a validated search last.
    */
-  async lookup(name: string, hint?: string | null): Promise<TermArticle | null> {
+  async lookup(name: string, hint?: string | null, signal?: AbortSignal): Promise<TermArticle | null> {
     const titles = [hint?.trim(), name.trim()].filter((t): t is string => !!t);
     for (const title of titles) {
-      const article = await this.summary(title);
+      const article = await this.summary(title, signal);
       if (article) return article;
     }
     // Nothing under either title: a search may still know the term.
-    const found = await this.searchTitle(name, hint ?? null);
+    const found = await this.searchTitle(name, hint ?? null, signal);
     if (!found) return null;
-    return this.summary(found);
+    return this.summary(found, signal);
   }
 
   /** The title of an article that carries the name, and nothing else. */
-  private async searchTitle(name: string, hint: string | null): Promise<string | null> {
+  private async searchTitle(name: string, hint: string | null, signal?: AbortSignal): Promise<string | null> {
     const wanted = normalize(name);
     if (!wanted) return null;
     const url = new URL('/w/api.php', this.opts.baseUrl);
@@ -111,7 +111,7 @@ export class Wikipedia implements Encyclopedia {
     url.searchParams.set('srsearch', name);
     url.searchParams.set('srlimit', '10');
     url.searchParams.set('format', 'json');
-    const body = await this.get(url);
+    const body = await this.get(url, 0, signal);
     if (body === null) return null;
     const hits = (body as SearchAnswer).query?.search ?? [];
     const qualifier = qualifierOf(hint);
@@ -133,21 +133,34 @@ export class Wikipedia implements Encyclopedia {
     return fallback;
   }
 
-  /** Ask the encyclopedia once, and wait for its turn first. */
-  private async get(url: URL): Promise<unknown | null> {
-    await this.waitTurn();
+  /**
+   * Ask the encyclopedia once, and wait for its turn first.
+   *
+   * The encyclopedia may say "come back later" — it answers 429 when it is busy or
+   * when the caller has asked too often. It says when, in the Retry-After header.
+   * Waiting is the answer to that, not failing: the work is not lost, it is later.
+   */
+  private async get(url: URL, attempt = 0, signal?: AbortSignal): Promise<unknown | null> {
+    await this.waitTurn(signal);
     const fetchImpl = this.opts.fetchImpl ?? fetch;
+    const timeout = AbortSignal.timeout(this.opts.timeoutMs);
     let res: Response;
     try {
       res = await fetchImpl(url.toString(), {
         headers: { 'User-Agent': this.opts.userAgent, Accept: 'application/json' },
-        signal: AbortSignal.timeout(this.opts.timeoutMs),
+        signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
       });
     } catch (err) {
       throw new Error(`Encyclopedia request failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     // A page that does not exist is an answer of its own: there is nothing to explain.
     if (res.status === 404) return null;
+    if (res.status === 429) {
+      if (attempt >= 3) throw new Error(`Encyclopedia answered 429 for "${url.pathname}"`);
+      const wait = parseRetryAfter(res.headers.get('retry-after')) ?? 30_000;
+      await sleep(Math.min(Math.max(wait, 1_000), 120_000), signal);
+      return this.get(url, attempt + 1, signal);
+    }
     if (!res.ok) throw new Error(`Encyclopedia answered ${res.status} for "${url.pathname}"`);
     try {
       return await res.json();
@@ -157,10 +170,10 @@ export class Wikipedia implements Encyclopedia {
   }
 
   /** Keep the requests apart, so the encyclopedia sees at most one at a time. */
-  private async waitTurn(): Promise<void> {
+  private async waitTurn(signal?: AbortSignal): Promise<void> {
     const earliest = this.lastRequestAt + this.opts.minIntervalMs;
     const now = Date.now();
-    if (earliest > now) await sleep(earliest - now);
+    if (earliest > now) await sleep(earliest - now, signal);
     this.lastRequestAt = Date.now();
   }
 }

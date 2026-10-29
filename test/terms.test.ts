@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { parseHTML } from 'linkedom';
 import type { ClassificationArticle, ClassificationResult, Classifier } from '../src/classification/types.js';
+import { loadConfig } from '../src/config.js';
 import type { InterestProfile } from '../src/profile/schema.js';
 import { sha256, stableStringify } from '../src/util/hash.js';
 import { dropFragmentTerms, parseTerms, prepareTermsPrompt, TermsValidationError } from '../src/terms/terms.js';
@@ -309,6 +310,42 @@ describe('the encyclopedia', () => {
   it('says so when the encyclopedia cannot answer', async () => {
     const fetchImpl = (async () => new Response('nope', { status: 503 })) as typeof fetch;
     await expect(wiki(fetchImpl).lookup('Cohere')).rejects.toThrow(/503/);
+  });
+
+  it('waits when the encyclopedia says to come back later', async () => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response('slow down', { status: 429, headers: { 'Retry-After': '1' } });
+      }
+      return new Response(
+        JSON.stringify({
+          title: 'Cohere',
+          description: 'Canadian artificial intelligence company',
+          extract: 'Cohere is a Canadian artificial intelligence company.',
+          type: 'standard',
+          titles: { canonical: 'Cohere' },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as typeof fetch;
+    const article = await wiki(fetchImpl).lookup('Cohere');
+    expect(article!.title).toBe('Cohere');
+    expect(calls).toBe(2);
+  });
+
+  it('gives up when the encyclopedia keeps saying to come back later', async () => {
+    const fetchImpl = (async () =>
+      new Response('slow down', { status: 429, headers: { 'Retry-After': '1' } })) as typeof fetch;
+    await expect(wiki(fetchImpl).lookup('Cohere')).rejects.toThrow(/429/);
+  });
+
+  it('asks in a way that says who is asking', () => {
+    // Wikipedia's edge answers 429 to a User-Agent that carries no address, whatever
+    // the gap between the requests is.
+    const { userAgent } = loadConfig({}).terms.wikipedia;
+    expect(userAgent).toMatch(/https?:\/\/\S+/)
   });
 });
 

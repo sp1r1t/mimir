@@ -85,7 +85,15 @@ const EnvSchema = z.object({
   TERMS_MAX_INPUT_CHARS: int(40000, 2000),
   TERMS_MAX_OUTPUT_TOKENS: int(4000, 500),
   WIKIPEDIA_URL: z.string().url().default('https://en.wikipedia.org'),
-  WIKIPEDIA_USER_AGENT: z.string().min(1).default('Mimir/0.1 (self-hosted news reader)'),
+  // Wikipedia's edge lets a request through only when the User-Agent says who is
+  // asking: a name and a way to reach them. Without one it answers 429 after a
+  // handful of requests, whatever the gap between them is. The address below is the
+  // reserved ".invalid" one, because a self-hosted reader has no public homepage to
+  // point at; set WIKIPEDIA_USER_AGENT to your own address to be reachable.
+  WIKIPEDIA_USER_AGENT: z
+    .string()
+    .min(1)
+    .default('Mimir/1.0 (self-hosted news reader; https://mimir.invalid)'),
   WIKIPEDIA_TIMEOUT_MS: int(15000, 1000),
   WIKIPEDIA_MIN_INTERVAL_MS: int(500, 0),
 

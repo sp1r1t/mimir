@@ -447,7 +447,10 @@ outdated, like its places.
 tokens and no second call. Only a brief written before that change needs the separate
 name-reading pass. Wikipedia is free, but the public instance asks for a `User-Agent`
 that identifies the caller and for a request at a time; `WIKIPEDIA_MIN_INTERVAL_MS`
-enforces the gap, and `WIKIPEDIA_USER_AGENT` should say who you are.
+enforces the gap. The `User-Agent` has to carry an address — a URL or a mailto — not
+just a name: Wikipedia's edge answers 429 to a caller it cannot reach, whatever the
+gap between the requests is. The default carries the reserved `.invalid` address, so
+set `WIKIPEDIA_USER_AGENT` to your own to be reachable.
 
 **The endpoints.**
 
@@ -541,9 +544,9 @@ Key settings:
 | `TERMS_MAX_INPUT_CHARS` | `40000` | Maximum article text sent to the term reader |
 | `TERMS_MAX_OUTPUT_TOKENS` | `4000` | Output token limit of the term reader |
 | `WIKIPEDIA_URL` | `https://en.wikipedia.org` | Encyclopedia the terms are looked up in |
-| `WIKIPEDIA_USER_AGENT` | `Mimir/0.1 (self-hosted news reader)` | How Wikipedia is asked; make it identify you |
+| `WIKIPEDIA_USER_AGENT` | `Mimir/1.0 (self-hosted news reader; https://mimir.invalid)` | How Wikipedia is asked; it must carry an address |
 | `WIKIPEDIA_TIMEOUT_MS` | `15000` | Timeout of one Wikipedia request |
-| `WIKIPEDIA_MIN_INTERVAL_MS` | `1000` | Minimum gap between two Wikipedia requests |
+| `WIKIPEDIA_MIN_INTERVAL_MS` | `500` | Minimum gap between two Wikipedia requests |
 | `LOG_LEVEL` | `info` | JSON log verbosity |
 | `RETENTION_FETCH_LOG_DAYS` | `30` | Fetch-history retention |
 | `RETENTION_JOBS_DAYS` | `14` | Completed-job retention |
