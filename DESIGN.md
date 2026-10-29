@@ -15,10 +15,10 @@ from that.
 desktop mode, no second surface, no "open the app to do this properly". A decision that
 only works on a wide screen is a decision that has to be rethought.
 
-**2. The action belongs where the trouble is.** A control that changes something should
-live next to that thing. When the thing it changes is long, or the trouble is that the
-control is far away, the control floats — it stays in reach instead of asking to be
-scrolled to.
+**2. The action belongs where the trouble is.** A control that changes something lives
+in the card of that thing, at the head of it — so it is reached before the long text
+under it, not after it. A control that acts on nothing in particular may float, but it
+has to earn that.
 
 **3. Show the wait.** Anything that takes time says so, counts, and says how long it has
 been waiting. Silence is the same as failure, and a reader cannot tell them apart.
@@ -37,26 +37,29 @@ third-party text. They are shown as text, never as markup.
 
 ## Decisions
 
-### D1 — The brief is rewritten from a circle arrow in the corner
+### D1 — The brief is rewritten from the brief card
 
-**What.** A brief that exists is rewritten from a round arrow (↻) that floats in the top
-right corner of the story page, just under the top bar. The brief panel itself only
-carries a button when there is no brief yet ("Write the brief"), when one is queued
-("Write now"), or when writing failed ("Retry the brief").
+**What.** A brief that exists is rewritten from a bare arrow (↻) in the head of the
+brief card, beside the "Story Intelligence Brief" title. The card keeps its text button
+only when there is no brief yet ("Write the brief"), when one is queued ("Write now"),
+or when writing failed ("Retry the brief").
 
-**Why.** The brief is long. The reader often knows from the "Outdated" badge that the
-story has moved on, and then has to scroll through the whole brief to reach the button
-at the end of it. The action was at the bottom of the thing it acted on — the opposite
-of where it is needed.
+**Why.** Rewriting is an operation on the brief, so it belongs in the brief card — not
+in the story header, and not floating over the page. The button used to sit at the end
+of the brief text, which asked the reader to walk through the whole of it to reach it.
+The head of the card is where the reader already is when the brief is the thing in
+hand, and it is above the text rather than below it.
 
-**How it shows.** A 40px circle in the corner, quiet grey normally, accent blue when the
-brief is outdated. It says "Rewrite the brief." in its tooltip, and carries the same
-label for a screen reader. It disappears while the brief is being written, because
-there is nothing to rewrite then, and comes back when the writing is done.
+**How it shows.** A bare glyph, like the check that marks a story seen: no border, no
+circle, no background. Quiet grey normally, accent blue when the brief is outdated. It
+carries the label "Rewrite the brief." for a screen reader. It disappears while the
+brief is being written, because there is nothing to rewrite then, and comes back when
+the writing is done.
 
-**What it means for later work.** A control that a reader needs *while reading* floats
-and keeps its own lane on the page (D8). A control that belongs to a section stays in
-that section.
+**What it means for later work.** An operation lives in the card of the thing it
+operates on, at the head of that card. A control that floats over the page has to earn
+its place, and a control that sits in a card it does not belong to is a lie about what
+it changes.
 
 ### D2 — A counter for every wait
 
@@ -161,8 +164,9 @@ grey, the warm gold of "kept", or the green and red of a state. A screen should 
 show two accents fighting.
 
 **Shape.** Cards and panels have an 8px radius and a 1px border, no shadow. Only
-floating things (the corner arrow, the term card, the full-screen map) have a shadow,
-because only they are off the page.
+floating things (the term card, the full-screen map) have a shadow, because only they
+are off the page. A button that acts on a card sits in that card's head, as a bare
+glyph: no border, no circle, no background.
 
 **Type.** The body is the browser's default at 16px. Metadata is 0.82rem and muted.
 Card headlines are 1.05rem. Chips are 0.78rem. Numbers that count are tabular, so they
@@ -180,12 +184,11 @@ while you are reading it is an interface that has been interrupted.
 ## Rules that keep coming up
 
 **A lane for floating controls.** A control that floats over the content gets a lane
-reserved for it (`body:has(.rewrite-corner) main { padding-right: … }`). A floating
-control that lies on top of the text is a control that hides the thing it is about.
+reserved for it, so it never lies on top of the text. A floating control that hides the
+thing it is about is a control that is in the wrong place.
 
 **The corner of the page is reserved.** The top-right corner of a story card holds the
-seen check; the top-right corner of the viewport holds the rewrite arrow. Two things in
-one corner would be one too many.
+seen check. Nothing else is put there.
 
 **Long presses explain.** An icon button applies its action on a short tap; holding it
 shows what it does. The action is never behind a hidden gesture.

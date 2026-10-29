@@ -131,8 +131,10 @@ function storySave(s: Pick<StoryListItem, 'id' | 'savedAt'>, labelled = false): 
 }
 
 /**
- * The circle arrow in the top right corner: it rewrites the brief and stays in reach,
- * so an outdated brief can be rewritten without walking through the whole of it.
+ * The arrow that rewrites the brief. Rewriting is a brief operation, not a story one,
+ * so the arrow belongs in the brief card. It sits at the head of that card, which is
+ * where the reader already is when the brief is the thing in hand, and which is reached
+ * without walking through the whole of the text.
  */
 function rewriteButton(s: StoryDetail): SafeHtml | null {
   if (!s.summary) return null;
@@ -141,11 +143,16 @@ function rewriteButton(s: StoryDetail): SafeHtml | null {
   if (running || waiting || s.summaryState === 'failed') return null;
   const stale = s.summaryState === 'stale';
   const help = stale ? 'This brief is outdated. Rewrite it.' : 'Rewrite the brief.';
-  return html`<form class="rewrite-corner" method="post" action="/stories/${s.id}/summary" data-story-action="summary">
+  return html`<form class="rewrite-form" method="post" action="/stories/${s.id}/summary" data-story-action="summary">
     <button type="submit" class="rewrite-btn ${stale ? 'stale' : ''}" title="${help}" aria-label="${help}">
       <span class="rewrite-icon" aria-hidden="true">&#8635;</span>
     </button>
   </form>`;
+}
+
+/** The head of a card: its title, and the control that acts on that card. */
+function panelHead(title: string, action: SafeHtml | null): SafeHtml {
+  return html`<div class="panel-head"><h3>${title}</h3>${action}</div>`;
 }
 
 const SUMMARY_BADGE: Record<SummaryState, [string, string] | null> = {
@@ -422,8 +429,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
     ? `Mimir's automatic-summary limit is reached (${budget.used}/${budget.limit} provider attempts in the past 24 hours, including retries). This is separate from the MiniMax plan allowance.`
     : s.summaryError;
   // The panel only carries the button for a brief that is not there yet, or that could not
-  // be written. A brief that exists is rewritten from the circle arrow in the corner, so
-  // the reader does not have to walk through the whole brief to reach it.
+  // be written. A brief that exists is rewritten from the arrow in the head of this card.
   const action = s.summary && s.summaryState !== 'failed'
     ? null
     : html`<form method="post" action="/stories/${s.id}/summary" class="inline" data-story-action="summary">
@@ -443,7 +449,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
             : null;
   if (!s.summary) {
     return html`<section class="panel">
-      <h3>Story Intelligence Brief</h3>
+      ${panelHead('Story Intelligence Brief', null)}
       ${status}
       ${configured ? null : html`<p class="muted">${provider.configurationHint()}</p>`}
       ${action}
@@ -478,7 +484,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
     const brief = sum.content;
     const newTitle = previousRevision ? `What's new since the brief of ${fmtDate(previousRevision.createdAt)}` : SECTION_TITLE.new_since;
     return html`<section class="panel summary-panel">
-      <h3>Story Intelligence Brief</h3>
+      ${panelHead('Story Intelligence Brief', rewriteButton(s))}
       ${status}
       ${written}
       <p class="brief-gist">${brief.gist.map((c, i) => html`${i ? ' ' : ''}${markTerms(c.text, glossary)} ${cite(c.sources, index)}`)}</p>
@@ -497,7 +503,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
   // at the same numbered timeline.
   const legacy = sum.content as LegacySummaryContent;
   return html`<section class="panel summary-panel">
-    <h3>Story Intelligence Brief</h3>
+    ${panelHead('Story Intelligence Brief', rewriteButton(s))}
     ${status}
     ${written}
     ${LEGACY_CLAIM_SECTIONS.map((k) => claims(LEGACY_SECTION_TITLE[k], legacy[k]))}
@@ -788,7 +794,6 @@ export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOp
   const glossary = app.stories.glossary();
   const body = html`
   <article class="detail story-detail" data-story-id="${s.id}" data-version="${app.stories.storyVersion(s.id)}">
-    ${rewriteButton(s)}
     <header>
       ${seenButton(s)}
       <h1>${markTerms(s.summary?.content.headline ?? s.headline, glossary)}</h1>

@@ -38,8 +38,8 @@ export function layout(app: App, opts: { title: string; nav: NavKey; body: SafeH
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${opts.title} · Mimir</title>
-<link rel="stylesheet" href="/static/app.css?v=rewrite-1">
-<script src="/static/app.js?v=rewrite-1" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=brief-1">
+<script src="/static/app.js?v=brief-1" defer></script>
 </head>
 <body>
 <header class="top">

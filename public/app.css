@@ -280,27 +280,19 @@ ul.plain li { margin: .3rem 0; }
 .card.leaving { opacity: 0; transform: translateX(8px); transition: opacity .2s, transform .2s; }
 .mark-all { margin: 0 0 .5rem; }
 
-/* The circle arrow that rewrites the brief. It floats under the top bar, in the corner,
-   so it is in reach from anywhere in a long brief. The page keeps a lane on the right
-   for it, so it never lies on top of the text. */
-.rewrite-corner { position: fixed; top: calc(var(--header-h, 3.6rem) + .6rem); right: .75rem; z-index: 30; margin: 0; }
-.rewrite-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0;
-  border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-2);
-  font-size: 1.3rem; line-height: 1; box-shadow: 0 2px 10px rgba(0, 0, 0, .14); }
-.rewrite-btn:hover { background: var(--bg); color: var(--text); }
-.rewrite-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.rewrite-btn.stale { border-color: var(--accent); color: var(--accent); }
-.rewrite-btn:disabled { opacity: .5; cursor: default; }
-body:has(.rewrite-corner) main { padding-right: 3.4rem; }
-@media (min-width: 721px) {
-  /* Keep the content centred on a wide screen; the lane is only for the corner. */
-  body:has(.rewrite-corner) main { padding-left: 3.4rem; }
-}
-@media (max-width: 720px) {
-  .rewrite-corner { right: .4rem; }
-  .rewrite-btn { font-size: 1.15rem; }
-  body:has(.rewrite-corner) main { padding-right: 3rem; }
-}
+/* The head of a card: the title, and the control that acts on that card. */
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.panel-head h3 { margin: 0; }
+
+/* The arrow that rewrites the brief. It belongs to the brief, so it sits in the head of
+   the brief card. It is a bare glyph, like the check that marks a story seen. */
+.rewrite-form { margin: 0; }
+.rewrite-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0;
+  border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 1.15rem; line-height: 1; }
+.rewrite-btn:hover { background: transparent; color: var(--accent-ink); filter: none; }
+.rewrite-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+.rewrite-btn.stale { color: var(--accent); }
+@media (max-width: 720px) { .rewrite-btn { width: 44px; height: 44px; } }
 @media (max-width: 720px) { .seen-btn { width: 44px; height: 44px; } }
 
 /* the star that keeps a story with the reader */

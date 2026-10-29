@@ -144,9 +144,10 @@ a key.
 - **Story details:** the Story Intelligence Brief with cited sources and claim status, the
   assessment with the articles behind each score, and a combined article timeline.
   The brief says when it was written, and a rewritten brief leads with what is new since
-  the one before it. A brief that exists is rewritten from the circle arrow in the top
-  right corner of the page, which stays in reach while the brief is read; the arrow
-  turns blue when the brief is outdated. The timeline starts at the most recent entry;
+  the one before it. A brief that exists is rewritten from the bare arrow (↻) in the head
+  of the brief card, beside its title, so the control is reached before the brief text
+  rather than after it; the arrow turns blue when the brief is outdated. The timeline
+  starts at the most recent entry;
   **Oldest first** / **Newest first** flips it, and the reader's choice is remembered
   for the next story.
   Every timeline entry carries its number, and that number is what the
@@ -704,7 +705,7 @@ need credentials or access public feeds.
 ## Code and extension points
 
 `DESIGN.md` records the design decisions of the interface — what each colour means,
-where a control lives, why the brief is rewritten from the corner — so that later
+where a control lives, why the brief is rewritten from its own card — so that later
 features follow the same rules and other projects can borrow them.
 
 ```text
