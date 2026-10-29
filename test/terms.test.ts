@@ -405,6 +405,28 @@ describe('the terms of a story', () => {
     expect(encyclopedia.calls.map((c) => c.name)).not.toContain('ICE');
   });
 
+  it('lets a story go of a term that turns out not to be a term', async () => {
+    // The brief names "ICE", but the articles only say "office".
+    const summaries = new MockSummaryProvider('ok', 0, [], [
+      { name: 'Cohere', kind: 'organisation', wiki: 'Cohere', role: 'the company' },
+      { name: 'ICE', kind: 'acronym', wiki: 'ICE', role: 'the agency' },
+    ]);
+    const encyclopedia = new FakeEncyclopedia();
+    encyclopedia.articles['Cohere'] = COHERE;
+    const app = await setup({ summaries, terms: new MockTermsProvider(), encyclopedia });
+    await publish([{ guid: 'a', title: 'Cohere met in the Barcelona office', host: 'wire.example.com', description: 'Cohere met in the Barcelona office.' }]);
+    const story = storyOf('a');
+
+    // An earlier run had linked the story to ICE.
+    app.stories.saveTerms(story.id, [{ name: 'ICE', kind: 'acronym', wiki: 'ICE', role: 'the agency', sources: [1] }]);
+    expect(app.stories.termsOf(story.id).map((t) => t.name)).toEqual(['ICE']);
+
+    app.storyPipeline.requestSummary(story.id);
+    await waitFor(() => app.stories.get(story.id)!.termsState === 'ready');
+
+    expect(app.stories.termsOf(story.id).map((t) => t.name)).toEqual(['Cohere']);
+  });
+
   it('names the terms itself when the brief names none', async () => {
     const terms = new MockTermsProvider('ok', [{ name: 'Cohere', kind: 'organisation', wiki: 'Cohere', role: 'the company' }], 0);
     const encyclopedia = new FakeEncyclopedia();
@@ -586,8 +608,19 @@ describe('a term that is only part of another word', () => {
     expect(kept.map((t) => t.name)).toEqual(['U.S. Immigration and Customs Enforcement']);
   });
 
-  it('keeps a short name, which cannot be judged', () => {
+  it('keeps a short name that stands on its own', () => {
     const kept = dropFragmentTerms([term('BP')], ['the bp well and the BP well']);
     expect(kept.map((t) => t.name)).toEqual(['BP']);
+  });
+
+  it('keeps a long name, which is an inflected form and not an accident', () => {
+    // The German article writes the genitive: "...des Audiovisuelle-Mediendienste-Gesetzes".
+    const kept = dropFragmentTerms([term('Audiovisuelle-Mediendienste-Gesetz')], ['umgesetzt durch eine Novellierung des Audiovisuelle-Mediendienste-Gesetzes']);
+    expect(kept.map((t) => t.name)).toEqual(['Audiovisuelle-Mediendienste-Gesetz']);
+  });
+
+  it('keeps a long name that the articles only write in an inflected form', () => {
+    const kept = dropFragmentTerms([term('Bundestag')], ['die Beschlüsse des Bundestags']);
+    expect(kept.map((t) => t.name)).toEqual(['Bundestag']);
   });
 });

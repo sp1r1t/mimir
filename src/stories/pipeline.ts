@@ -775,7 +775,13 @@ export class StoryPipeline {
     const input = st.summaryInput(storyId);
     if (input) {
       const texts = input.articles.flatMap((a) => [a.title ?? '', a.summaryText ?? '', a.contentText ?? '']);
-      named = dropFragmentTerms(named, texts);
+      const kept = dropFragmentTerms(named, texts);
+      // A term the story was linked to before, and that is not a term after all, goes.
+      for (const gone of named) {
+        if (kept.includes(gone)) continue;
+        st.unlinkTerm(storyId, termKey(gone.name));
+      }
+      named = kept;
       if (!named.length) return st.setTermsState(storyId, 'none');
     }
 

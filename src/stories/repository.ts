@@ -917,6 +917,13 @@ export class StoryRepository {
     })();
   }
 
+  /** Let a story go of a term: the name turned out not to be a term of that story. */
+  unlinkTerm(storyId: number, key: string): void {
+    this.db
+      .prepare('DELETE FROM story_terms WHERE story_id = ? AND term_id = (SELECT id FROM terms WHERE term_key = ?)')
+      .run(storyId, key);
+  }
+
   /** Give a term its explanation. */
   explainTerm(
     key: string,

@@ -186,14 +186,22 @@ export function parseExplanations(text: string): { name: string; explanation: st
  * articles say so. A term the articles do not name at all is left alone, because the
  * model may know it under another spelling ("U.S. Immigration and Customs Enforcement"
  * for "ICE").
+ *
+ * Only a short name can be an accident. A long or hyphenated name is a name, and what
+ * looks like a fragment is often an inflected form of it: the German articles write
+ * "Audiovisuelle-Mediendienste-Gesetzes" for the "Audiovisuelle-Mediendienste-Gesetz",
+ * and that is the same term, not a different one.
  */
 export function dropFragmentTerms(terms: FoundTerm[], texts: string[]): FoundTerm[] {
   const joined = texts.filter(Boolean).join('\n');
   if (!joined.trim()) return terms;
   return terms.filter((t) => {
     const name = t.name.trim();
-    // Two letters are too short to judge: "an" is part of many words.
-    if (name.length < 3) return true;
+    // Two letters are too short to judge: "an" is part of many words. More than four is
+    // too long to be an accident.
+    if (name.length < 3 || name.length > 4) return true;
+    // A name with a space or a hyphen in it is not an accidental fragment.
+    if (!/^[\p{L}\p{N}]+$/u.test(name)) return true;
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const anywhere = new RegExp(escaped, 'iu');
     if (!anywhere.test(joined)) return true;
