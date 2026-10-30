@@ -150,10 +150,10 @@ a key.
   headline of the brief panel, so the control is reached before the brief text rather
   than after it; the arrow turns blue when the brief is outdated, and pressing it
   rewrites the brief without folding the panel. The brief stands open, because it is
-  the story itself; the assessment, the timeline, the terms, the merge controls and
-  the changes are folded. A reader who folds the brief keeps it folded, and a reader
-  who opens the timeline keeps it open, also after the page puts a fresh story
-  in place of the old one. The timeline starts at the most recent entry;
+  the story itself, and the assessment and the timeline stand open with it; the terms,
+  the merge controls and the changes are folded. A reader who folds the brief keeps it
+  folded, and a reader who folds the assessment keeps it folded, also after the page
+  puts a fresh story in place of the old one. The timeline starts at the most recent entry;
   **Oldest first** / **Newest first** flips it, and the reader's choice is remembered
   for the next story.
   Every timeline entry carries its number, and that number is what the

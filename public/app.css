@@ -367,11 +367,15 @@ body.map-open { overflow: hidden; }
 /* The head of a panel that folds away: the title, what the panel holds, and the arrow
    that folds it. The title is a heading inside the summary, so the panel keeps its
    name, and it stands on the same line as the rest of the head. A summary that is
-   given a display of its own loses the arrow the browser draws, so the head stays a
-   plain list item and only its contents are laid out. */
+   given a display of its own loses the arrow the browser draws, so the summary stays
+   a plain list item and the row of the head is laid out inside it. */
 .panel > summary { cursor: pointer; }
-.panel > summary h3 { display: inline; margin: 0; }
-.panel > summary .rewrite-form { float: right; margin: -.4rem -.3rem -.4rem .5rem; }
+.panel-head { display: inline-flex; align-items: center; gap: .45rem; }
+.panel > summary h3 { margin: 0; }
+.panel-head .rewrite-form { margin: 0 0 0 auto; }
+.panel-head .badge { flex: none; }
+/* Room between the head of an open panel and what it holds. */
+.panel[open] > summary { margin-bottom: .7rem; }
 /* The tools of a folded panel stand at the top of its body: the button that flips the
    order of the timeline. */
 .timeline-tools { display: flex; justify-content: flex-end; gap: .5rem; margin: .5rem 0 .25rem; }

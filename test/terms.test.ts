@@ -658,7 +658,7 @@ describe('the terms of a story', () => {
     expect(terms).toBeGreaterThan(timeline);
   });
 
-  it('folds the timeline away, and leaves the brief standing', async () => {
+  it('leaves the timeline, the assessment and the brief standing', async () => {
     const encyclopedia = new FakeEncyclopedia();
     encyclopedia.articles['Cohere'] = COHERE;
     const app = await setup({ summaries: briefWithTerms(), encyclopedia });
@@ -670,10 +670,13 @@ describe('the terms of a story', () => {
     server = buildServer(app);
     const page = await server.inject({ method: 'GET', url: `/stories/${story.id}` });
     const { document } = parseHTML(page.body);
-    // The timeline is a long list: it folds away.
+    // The timeline and the assessment stand open: the reader wants them there.
     const timeline = document.querySelector('details.timeline-panel');
     expect(timeline).not.toBeNull();
-    expect(timeline!.hasAttribute('open')).toBe(false);
+    expect(timeline!.hasAttribute('open')).toBe(true);
+    const assessment = document.querySelector('details.assessment-panel');
+    expect(assessment).not.toBeNull();
+    expect(assessment!.hasAttribute('open')).toBe(true);
     // The brief is the story itself: it stands open, and can be folded away.
     const brief = document.querySelector('details.summary-panel');
     expect(brief).not.toBeNull();

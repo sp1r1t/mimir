@@ -154,10 +154,11 @@ function rewriteButton(s: StoryDetail): SafeHtml | null {
  * The head of a panel that folds away: its title, what it holds, and the arrow the
  * browser draws, which is the same for every panel of a story. The title is a heading
  * inside the summary, so the panel keeps its name, and everything in the head stands
- * on one line.
+ * on one line: the summary itself is left as a list item, so that the browser keeps
+ * drawing its arrow, and the row of the head is laid out inside it.
  */
-function panelSummary(title: string, note?: SafeHtml | string | null): SafeHtml {
-  return html`<summary><h3>${title}</h3>${note ? html` ${note}` : null}</summary>`;
+function panelSummary(title: string, note?: SafeHtml | string | null, extra?: SafeHtml | null): SafeHtml {
+  return html`<summary><span class="panel-head"><h3>${title}</h3>${note ?? null}${extra ?? null}</span></summary>`;
 }
 
 const SUMMARY_BADGE: Record<SummaryState, [string, string] | null> = {
@@ -494,7 +495,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
     const brief = sum.content;
     const newTitle = previousRevision ? `What's new since the brief of ${fmtDate(previousRevision.createdAt)}` : SECTION_TITLE.new_since;
     return html`<details class="panel summary-panel" id="story-brief" open>
-      <summary><h3>Story Intelligence Brief</h3> ${summaryBadge}${rewriteButton(s)}</summary>
+      ${panelSummary('Story Intelligence Brief', summaryBadge, rewriteButton(s))}
       ${status}
       ${written}
       <p class="brief-gist">${brief.gist.map((c, i) => html`${i ? ' ' : ''}${markTerms(c.text, glossary)} ${cite(c.sources, index)}`)}</p>
@@ -513,7 +514,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
   // at the same numbered timeline.
   const legacy = sum.content as LegacySummaryContent;
   return html`<details class="panel summary-panel" id="story-brief" open>
-    <summary><h3>Story Intelligence Brief</h3> ${summaryBadge}${rewriteButton(s)}</summary>
+    ${panelSummary('Story Intelligence Brief', summaryBadge, rewriteButton(s))}
     ${status}
     ${written}
     ${LEGACY_CLAIM_SECTIONS.map((k) => claims(LEGACY_SECTION_TITLE[k], legacy[k]))}
@@ -543,7 +544,7 @@ function assessmentPanel(s: StoryDetail, now: number): SafeHtml {
   const ev = current?.evidence;
   const from = (e: { articleId: number } | null | undefined) => (e ? html`from <a href="#a-${e.articleId}">article ${e.articleId}</a>` : null);
   const rec = s.recencyHalfLifeHours != null ? recency(s.latestDevelopmentAt, now, s.recencyHalfLifeHours) : null;
-  return html`<details class="panel assessment-panel" id="story-assessment">
+  return html`<details class="panel assessment-panel" id="story-assessment" open>
     ${panelSummary('Assessment', html`<span class="muted small">${plural(s.articleCount, 'article')}</span>`)}
     <div class="score-grid">
       ${bigScore('Priority', s.priority, current ? `${current.formula}, profile v${current.profileVersion}` : 'awaiting classification')}
@@ -590,7 +591,7 @@ function timelinePanel(app: App, s: StoryDetail, now: number, glossary: Markable
   const numbered = s.members.map((m, i) => ({ member: m, number: i + 1 })).reverse();
   // The timeline is folded away by default: the story is what the reader came for, and
   // the entries are a long list to dig into.
-  return html`<details class="panel timeline-panel" id="story-timeline">
+  return html`<details class="panel timeline-panel" id="story-timeline" open>
     ${panelSummary('Timeline', html`<span class="muted small">${plural(s.members.length, 'article')}</span>`)}
     <div class="timeline-tools">
       <button type="button" class="timeline-order" data-timeline-order>Oldest first</button>

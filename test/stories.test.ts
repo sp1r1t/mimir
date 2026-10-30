@@ -754,7 +754,7 @@ describe('stories', () => {
     expect(await get('/')).toContain('all caught up');
   });
 
-  it('folds every panel of a story away, and gives them all the same head', async () => {
+  it('gives every panel of a story the same head, and leaves the ones the reader wants open', async () => {
     const app = await setup({ matcher: new FakeMatcher(['volcano']) });
     server = buildServer(app);
     await server.ready();
@@ -780,6 +780,17 @@ describe('stories', () => {
       const head = panel.firstElementChild!;
       expect(head.tagName).toBe('SUMMARY');
       expect(head.querySelector('h3')!.textContent).toBeTruthy();
+      // The head is one row: the title and whatever else it holds stand on the
+      // same line, so the title, the count and the arrow do not stack up.
+      expect(head.querySelectorAll('.panel-head')).toHaveLength(1);
+    }
+    // The brief, the assessment and the timeline are what the reader came for:
+    // they stand open. The terms and the merge controls wait to be asked for.
+    for (const id of ['story-brief', 'story-assessment', 'story-timeline']) {
+      expect(document.querySelector(`#${id}`)!.hasAttribute('open')).toBe(true);
+    }
+    for (const id of ['story-terms', 'story-merge']) {
+      expect(document.querySelector(`#${id}`)!.hasAttribute('open')).toBe(false);
     }
     // The map card is not one of them: it opens from the button in the header.
     const sections = [...document.querySelectorAll('.story-detail > section.panel')];
