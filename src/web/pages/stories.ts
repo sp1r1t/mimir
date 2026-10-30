@@ -446,6 +446,12 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
           : s.summaryState === 'stale'
             ? html`<p class="badge-line"><span class="badge pending">Outdated</span> <span class="muted">The story has developed since this brief was written.</span></p>`
             : null;
+  // The state of the brief is on the head of the panel, so that a folded brief still
+  // says whether it is there, and whether it is out of date.
+  const briefBadge = SUMMARY_BADGE[s.summaryState];
+  const summaryBadge = briefBadge
+    ? html` <span class="badge ${briefBadge[0]}" title="${s.summaryError ?? ''}">${briefBadge[1]}</span>`
+    : null;
   if (!s.summary) {
     return html`<section class="panel">
       ${panelHead('Story Intelligence Brief', null)}
@@ -482,8 +488,9 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
   if (isBrief(sum.content)) {
     const brief = sum.content;
     const newTitle = previousRevision ? `What's new since the brief of ${fmtDate(previousRevision.createdAt)}` : SECTION_TITLE.new_since;
-    return html`<section class="panel summary-panel">
-      ${panelHead('Story Intelligence Brief', rewriteButton(s))}
+    return html`<details class="panel summary-panel" id="story-brief" open>
+      <summary><h3>Story Intelligence Brief</h3>${summaryBadge}</summary>
+      <div class="panel-head brief-tools">${rewriteButton(s)}</div>
       ${status}
       ${written}
       <p class="brief-gist">${brief.gist.map((c, i) => html`${i ? ' ' : ''}${markTerms(c.text, glossary)} ${cite(c.sources, index)}`)}</p>
@@ -495,14 +502,15 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
       ${meta}
       ${revisions}
       ${action}
-    </section>`;
+    </details>`;
   }
 
   // An executive summary from before the brief: it still reads, and its citations point
   // at the same numbered timeline.
   const legacy = sum.content as LegacySummaryContent;
-  return html`<section class="panel summary-panel">
-    ${panelHead('Story Intelligence Brief', rewriteButton(s))}
+  return html`<details class="panel summary-panel" id="story-brief" open>
+    <summary><h3>Story Intelligence Brief</h3>${summaryBadge}</summary>
+    <div class="panel-head brief-tools">${rewriteButton(s)}</div>
     ${status}
     ${written}
     ${LEGACY_CLAIM_SECTIONS.map((k) => claims(LEGACY_SECTION_TITLE[k], legacy[k]))}
@@ -514,7 +522,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
     ${meta}
     ${revisions}
     ${action}
-  </section>`;
+  </details>`;
 }
 
 function bigScore(label: string, value: number | null, note?: SafeHtml | string | null, help?: string): SafeHtml {
@@ -577,9 +585,11 @@ function timelinePanel(app: App, s: StoryDetail, now: number, glossary: Markable
   // number of an entry is its place in the story's publish order, and stays that way
   // when the reader flips the order.
   const numbered = s.members.map((m, i) => ({ member: m, number: i + 1 })).reverse();
-  return html`<section class="panel">
-    <div class="timeline-head">
-      <h3>Timeline</h3>
+  // The timeline is folded away by default: the story is what the reader came for, and
+  // the entries are a long list to dig into.
+  return html`<details class="panel timeline-panel" id="story-timeline">
+    <summary><h3>Timeline</h3><span class="muted small">${plural(s.members.length, 'article')}</span></summary>
+    <div class="timeline-tools">
       <button type="button" class="timeline-order" data-timeline-order>Oldest first</button>
     </div>
     <ol class="timeline" data-order="newest">${numbered.map(({ member: m, number: n }) => html`<li id="a-${m.articleId}" class="timeline-entry role-${m.role}" data-order="${n}">
@@ -608,7 +618,7 @@ function timelinePanel(app: App, s: StoryDetail, now: number, glossary: Markable
         <button type="submit" class="secondary">Move selected to a new story</button>
       </form>
     </details>` : null}
-  </section>`;
+  </details>`;
 }
 
 function mergePanel(app: App, s: StoryDetail): SafeHtml {
@@ -767,7 +777,7 @@ function termsPanel(s: StoryDetail): SafeHtml {
   const action = html`<form method="post" action="/stories/${s.id}/terms" class="inline" data-story-action="terms">
     <button type="submit" class="secondary" ${waiting ? html`disabled` : null}>${s.terms.length ? 'Explain again' : 'Explain the terms'}</button>
   </form>`;
-  return html`<details class="panel terms-panel">
+  return html`<details class="panel terms-panel" id="story-terms">
     <summary><strong>Terms</strong>${s.terms.length ? html` <span class="muted small">${plural(s.terms.length, 'term')}</span>` : null}${badge ? html` <span class="badge ${badge[0]}">${badge[1]}</span>` : null}</summary>
     ${status}
     ${s.terms.length
@@ -778,18 +788,20 @@ function termsPanel(s: StoryDetail): SafeHtml {
             <span class="muted small">${TERM_KIND_LABEL[t.kind]}${t.role ? ` · ${t.role}` : ''}</span>
             ${t.description ? html`<div class="term-desc">${t.description}</div>` : null}
             ${t.summary ? html`<div class="term-summary">${t.summary}</div>` : null}
-            ${source ? html`<a class="term-source" href="${source.url}" target="_blank" rel="noopener noreferrer">${source.name}</a>` : null}
-            ${t.status === 'unknown' ? html`<span class="muted small">not explained</span>` : null}
-            ${t.sources.length ? cite(t.sources, index) : null}
-            <form method="post" action="/stories/${s.id}/terms/${encodeURIComponent(t.key)}" class="inline">
-              <button type="submit" class="secondary small" ${waiting ? html`disabled` : null}>Explain again</button>
-            </form>
+            <div class="term-links">
+              ${source ? html`<a class="term-source" href="${source.url}" target="_blank" rel="noopener noreferrer">${source.name}</a>` : null}
+              ${t.sources.length ? cite(t.sources, index) : null}
+              ${t.status === 'unknown' ? html`<span class="muted small">not explained</span>` : null}
+              <form method="post" action="/stories/${s.id}/terms/${encodeURIComponent(t.key)}" class="inline">
+                <button type="submit" class="secondary small" ${waiting ? html`disabled` : null}>Explain again</button>
+              </form>
+            </div>
           </li>`;
         })}</ul>`
       : html`<p class="muted">No term of this story has been explained yet.</p>`}
     ${s.termsError && state !== 'failed' ? html`<p class="muted small">${s.termsError}</p>` : null}
     ${action}
-  </section>`;
+  </details>`;
 }
 
 export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOpen = false): SafeHtml {

@@ -8,7 +8,8 @@
  * "RTS" is Radio Television of Serbia in one and a real-time strategy game in several;
  * "GR" is a Debian General Resolution and a Fourier robot; "ORG" is the Open Rights
  * Group and a placeholder in a shell command; "Cube" is Roblox's generative AI system
- * and a solid with six square faces.
+ * and a solid with six square faces; "Kitty" is a terminal emulator in one story and
+ * the character on the merchandise in another.
  *
  * A name with a reading is marked where the words of its reading stand near it: "PT" is
  * marked where the sentence says party, workers or Lula, and nowhere else. The words are
@@ -72,4 +73,9 @@ export const READINGS: Record<string, Reading> = {
   buzz: { strong: ['buzz.xyz', 'jack dorsey'], weak: ['workspace', 'channel', 'attestation', 'open source'] },
   // The browser engine, and what the eyes do.
   blink: { strong: ['chromium', 'webkit', 'browser engine'], weak: ['engine', 'rendering'] },
+  // The terminal emulator, and the character whose face is on the merchandise.
+  kitty: {
+    strong: ['kitty graphics', 'kitty protocol', 'terminal emulator', 'kovidgoyal', 'ghostty'],
+    weak: ['terminal', 'graphics', 'ssh', 'clipboard', 'emulator', 'protocol'],
+  },
 };

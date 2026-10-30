@@ -144,10 +144,13 @@ a key.
 - **Story details:** the Story Intelligence Brief with cited sources and claim status, the
   assessment with the articles behind each score, and a combined article timeline.
   The brief says when it was written, and a rewritten brief leads with what is new since
-  the one before it. A brief that exists is rewritten from the bare arrow (↻) in the head
-  of the brief card, beside its title, so the control is reached before the brief text
-  rather than after it; the arrow turns blue when the brief is outdated. The timeline
-  starts at the most recent entry;
+  the one before it. A brief that exists is rewritten from the bare arrow (↻) at the top
+  of the brief card, so the control is reached before the brief text rather than after
+  it; the arrow turns blue when the brief is outdated. The brief and the timeline both
+  fold away: the brief stands open, because it is the story itself, and the timeline is
+  folded, because it is a long list. A reader who folds the brief keeps it folded, and
+  a reader who opens the timeline keeps it open, also after the page puts a fresh story
+  in place of the old one. The timeline starts at the most recent entry;
   **Oldest first** / **Newest first** flips it, and the reader's choice is remembered
   for the next story.
   Every timeline entry carries its number, and that number is what the
@@ -189,7 +192,9 @@ a key.
   link to its source. The story page lists the terms of the story with their
   explanations in a panel that stands after the timeline and is folded away until the
   reader opens it, **Explain the terms** looks up the ones a brief does not name, and
-  **Explain again** refreshes them. The **Glossary** page in the navigation lists
+  **Explain again** refreshes them. The links of a term — its source, the articles it
+  comes from and its own button — stand on one line, so a term does not take a screen
+  of its own. The **Glossary** page in the navigation lists
   everything Mimir knows, grouped by kind. See **Terms and the glossary** below.
 - **Articles:** sort by rank, personal relevance, publication or discovery; search title,
   summary, text and author; filter by source, category, relevance range, date,
@@ -456,11 +461,15 @@ one story is marked in every story and article that names it. A name that means 
 things needs more than that: "PT" is Lula's Workers' Party in one story and the
 Pacific time zone in half a dozen others, "RTS" is Radio Television of Serbia in one
 and a real-time strategy game in several, "GR" is a Debian General Resolution and a
-Fourier robot. Such a name is marked only where the words of its reading stand near
-it — "PT" is a button where the sentence says party, workers or Lula, and nowhere
-else — and it is matched as the news writes it, so the "cube" of a solid with six
-faces is never the "Cube" of Roblox's generative system. The story that named the term
-marks it wherever it stands, because that story knows which of the two it means.
+Fourier robot, "Kitty" is a terminal emulator in one story and the character on the
+merchandise in another. Such a name is marked only where the words of its reading
+stand near it — "PT" is a button where the sentence says party, workers or Lula, and
+nowhere else — and it is matched as the news writes it, so the "cube" of a solid with
+six faces is never the "Cube" of Roblox's generative system. The story that named the
+term marks it wherever it stands, because that story knows which of the two it means.
+A thing that has a name of its own gets an entry of its own: "Hello Kitty" is filed
+apart from the "Kitty" of the terminal emulators, and each of them is explained in its
+own right.
 
 **When Wikipedia does not know.** A term the encyclopedia does not have is explained
 from the articles instead, by a second reading of them: one or two sentences of what

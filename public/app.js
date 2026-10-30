@@ -580,9 +580,11 @@ async function refreshStory(storyId) {
   const mapOpen = oldMap ? !oldMap.hasAttribute('hidden') : false;
   const mapFull = oldMap ? oldMap.classList.contains('fullscreen') : false;
   destroyMap(oldMap);
-  // The terms are folded away by default, but a reader who opened them keeps them open.
-  const oldTerms = current.querySelector('details.terms-panel');
-  const termsOpen = oldTerms ? oldTerms.hasAttribute('open') : false;
+  // The panels that fold away are folded by default, but a reader who opened one keeps
+  // it open.
+  const openPanels = new Set(
+    [...current.querySelectorAll('details[id][open]')].map((panel) => panel.id),
+  );
   // The counters in the fresh story are counted from the moment the page arrived.
   for (const counter of fresh.querySelectorAll('[data-elapsed-since]')) {
     counter.setAttribute('data-elapsed-arrived', String(Date.now()));
@@ -594,8 +596,9 @@ async function refreshStory(storyId) {
   const map = fresh.querySelector('#story-map');
   if (map && mapFull) setFullscreen(map, true);
   if (map && mapOpen) drawMap(map);
-  const terms = fresh.querySelector('details.terms-panel');
-  if (terms && termsOpen) terms.setAttribute('open', '');
+  for (const panel of fresh.querySelectorAll('details[id]')) {
+    if (openPanels.has(panel.id)) panel.setAttribute('open', '');
+  }
 }
 
 function stopWatching() {

@@ -658,6 +658,49 @@ describe('the terms of a story', () => {
     expect(terms).toBeGreaterThan(timeline);
   });
 
+  it('folds the timeline away, and leaves the brief standing', async () => {
+    const encyclopedia = new FakeEncyclopedia();
+    encyclopedia.articles['Cohere'] = COHERE;
+    const app = await setup({ summaries: briefWithTerms(), encyclopedia });
+    await publish([{ guid: 'a', title: 'Cohere raises a round', host: 'wire.example.com' }]);
+    const story = storyOf('a');
+    app.storyPipeline.requestSummary(story.id);
+    await waitFor(() => app.stories.get(story.id)!.summary != null);
+
+    server = buildServer(app);
+    const page = await server.inject({ method: 'GET', url: `/stories/${story.id}` });
+    const { document } = parseHTML(page.body);
+    // The timeline is a long list: it folds away.
+    const timeline = document.querySelector('details.timeline-panel');
+    expect(timeline).not.toBeNull();
+    expect(timeline!.hasAttribute('open')).toBe(false);
+    // The brief is the story itself: it stands open, and can be folded away.
+    const brief = document.querySelector('details.summary-panel');
+    expect(brief).not.toBeNull();
+    expect(brief!.hasAttribute('open')).toBe(true);
+  });
+
+  it('keeps the links of a term on one line', async () => {
+    const encyclopedia = new FakeEncyclopedia();
+    encyclopedia.articles['Cohere'] = COHERE;
+    const app = await setup({ summaries: briefWithTerms(), encyclopedia });
+    await publish([{ guid: 'a', title: 'Cohere raises a round', host: 'wire.example.com' }]);
+    const story = storyOf('a');
+    app.storyPipeline.requestSummary(story.id);
+    await waitFor(() => app.stories.get(story.id)!.termsState === 'ready');
+
+    server = buildServer(app);
+    const page = await server.inject({ method: 'GET', url: `/stories/${story.id}` });
+    const { document } = parseHTML(page.body);
+    // The source, the articles it comes from and the button stand together in one row:
+    // each of them on a line of its own takes the room of a small screen.
+    const links = document.querySelector('.terms-panel .term-links');
+    expect(links).not.toBeNull();
+    expect(links!.querySelector('.term-source')).not.toBeNull();
+    expect(links!.querySelector('form')).not.toBeNull();
+    expect(links!.parentElement!.classList.contains('term-entry')).toBe(true);
+  });
+
   it('answers with the explanation of a term', async () => {
     const encyclopedia = new FakeEncyclopedia();
     encyclopedia.articles['Cohere'] = COHERE;
@@ -753,6 +796,16 @@ describe('a name that stands for two things', () => {
     // The solid with six faces is written in lower case.
     expect(marked('The cube has six faces.', glossary)).toEqual([]);
     expect(marked('Roblox Cube makes 3D content.', glossary)).toEqual(['Cube']);
+  });
+
+  it('tells a terminal emulator from a character on the merchandise', () => {
+    const KITTY = { key: 'kitty', name: 'Kitty', description: 'Terminal emulator', summary: null };
+    const HELLO_KITTY = { key: 'hello kitty', name: 'Hello Kitty', description: "Sanrio's character", summary: null };
+    const glossary = markingTerms([KITTY, HELLO_KITTY], []);
+    expect(marked('Ghostty now supports the Kitty graphics protocol.', glossary)).toEqual(['Kitty']);
+    // The merchandise is not the terminal: the character has a name of its own.
+    expect(marked('Hello Kitty maker cuts ties with a Japanese spy drama.', glossary)).toEqual(['Hello Kitty']);
+    expect(marked('The company behind the Hello Kitty franchise apologised.', glossary)).toEqual(['Hello Kitty']);
   });
 });
 

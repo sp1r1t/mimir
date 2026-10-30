@@ -191,8 +191,6 @@ tr.active-row td { background: var(--chip-bg); }
 .sources-list { padding-left: 1.6rem; font-size: .88rem; }
 .sources-list li { margin: .2rem 0; }
 .timeline { list-style: none; padding: 0; margin: 0 0 1rem; border-left: 2px solid var(--border); }
-.timeline-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .75rem; }
-.timeline-head h3 { margin: 0; }
 .timeline-order { display: none; align-items: center; gap: .3rem; background: transparent; color: var(--text-2); border: 1px solid var(--border); padding: .25rem .7rem; font: inherit; font-size: .82rem; border-radius: 999px; cursor: pointer; }
 html.js .timeline-order { display: inline-flex; }
 .timeline-order:hover { background: var(--bg); color: var(--text); }
@@ -370,6 +368,13 @@ body.map-open { overflow: hidden; }
 .term-card-desc { color: var(--text-2); }
 .term-card-source { font-size: .85rem; }
 .terms-panel > summary { font-size: 1.05rem; }
+/* The heads of the panels that fold away: the title, and what the panel holds. */
+.summary-panel > summary, .timeline-panel > summary { display: flex; align-items: baseline; gap: .6rem; }
+.summary-panel > summary h3, .timeline-panel > summary h3 { margin: 0; font-size: 1.05rem; }
+/* The tools of a folded panel stand at the top of its body: the button that flips the
+   order of the timeline, and the arrow that rewrites the brief. */
+.timeline-tools, .brief-tools { display: flex; justify-content: flex-end; gap: .5rem; margin: .5rem 0 .25rem; }
+.timeline-tools .timeline-order { margin: 0; }
 .terms-panel .term-list { list-style: none; margin: .5rem 0 .25rem; padding: 0; display: flex; flex-direction: column; }
 .terms-panel .term-entry, .glossary-detail .term-entry { display: flex; flex-direction: column; gap: .15rem; padding: .55rem 0; border-top: 1px solid var(--border); }
 .terms-panel .term-entry:first-child, .glossary-detail .term-entry:first-child { border-top: 0; }
@@ -377,3 +382,8 @@ body.map-open { overflow: hidden; }
 .term-desc { color: var(--text-2); }
 .term-summary { color: var(--text); }
 .term-source { font-size: .85rem; }
+/* The links of a term stand on one line: the source, the articles it comes from, and
+   the button that looks it up again. On a phone they wrap, but they do not each take
+   a line of their own. */
+.term-links { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .8rem; }
+.term-links form { margin-left: auto; }
