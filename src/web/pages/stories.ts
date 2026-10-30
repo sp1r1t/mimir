@@ -721,7 +721,7 @@ const TERMS_BADGE: Record<TermsState, [string, string] | null> = {
   none: null,
   pending: ['pending', 'Terms queued'],
   running: ['pending', 'Explaining terms'],
-  ready: ['investigate', 'Terms'],
+  ready: ['investigate', 'Explained'],
   stale: ['pending', 'Terms outdated'],
   failed: ['failed', 'Term lookup failed'],
 };
@@ -745,6 +745,9 @@ function termSource(t: StoryTerm): { name: string; url: string } | null {
 /**
  * The glossary of this story: the names the reader may not know, and what they are.
  * The reader can also tap a term in the brief itself.
+ *
+ * The panel is folded away by default and stands after the timeline: the terms are a
+ * reference to look things up in, and the story is what the reader came for.
  */
 function termsPanel(s: StoryDetail): SafeHtml {
   const state = s.termsState;
@@ -753,20 +756,19 @@ function termsPanel(s: StoryDetail): SafeHtml {
   const badge = TERMS_BADGE[state];
   const status =
     state === 'pending'
-      ? html`<p class="badge-line"><span class="badge pending">Queued</span> <span class="muted">The terms of this story are being looked up.</span></p>`
+      ? html`<p class="muted">The terms of this story are being looked up.</p>`
       : state === 'running'
-        ? html`<p class="badge-line"><span class="badge pending">Looking</span> <span class="muted">Looking each term up in the encyclopedia.</span></p>`
+        ? html`<p class="muted">Looking each term up in the encyclopedia.</p>`
         : state === 'failed'
           ? html`<p class="error-text">The lookup failed: ${s.termsError ?? 'unknown error'}</p>`
           : state === 'stale'
-            ? html`<p class="badge-line"><span class="badge pending">Outdated</span> <span class="muted">The story has developed since these terms were explained.</span></p>`
+            ? html`<p class="muted">The story has developed since these terms were explained.</p>`
             : null;
   const action = html`<form method="post" action="/stories/${s.id}/terms" class="inline" data-story-action="terms">
     <button type="submit" class="secondary" ${waiting ? html`disabled` : null}>${s.terms.length ? 'Explain again' : 'Explain the terms'}</button>
   </form>`;
-  return html`<section class="panel terms-panel">
-    <h3>Terms</h3>
-    ${badge && !status ? html`<p class="badge-line"><span class="badge ${badge[0]}">${badge[1]}</span></p>` : null}
+  return html`<details class="panel terms-panel">
+    <summary><strong>Terms</strong>${s.terms.length ? html` <span class="muted small">${plural(s.terms.length, 'term')}</span>` : null}${badge ? html` <span class="badge ${badge[0]}">${badge[1]}</span>` : null}</summary>
     ${status}
     ${s.terms.length
       ? html`<ul class="term-list">${s.terms.map((t) => {
@@ -814,9 +816,9 @@ export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOp
     </header>
     ${mapPanel(app, s, mapOpen)}
     ${summaryPanel(app, s, now, glossary)}
-    ${termsPanel(s)}
     ${assessmentPanel(s, now)}
     ${timelinePanel(app, s, now, glossary)}
+    ${termsPanel(s)}
     ${mergePanel(app, s)}
     ${s.events.length
       ? html`<section class="panel"><h3>Changes</h3><table><tbody>${s.events.map((e) => html`<tr><td>${fmtDate(e.createdAt)}</td><td>${eventText(e)}</td></tr>`)}</tbody></table></section>`

@@ -634,6 +634,30 @@ describe('the terms of a story', () => {
     expect(document.querySelector('[data-story-action="terms"]')).not.toBeNull();
   });
 
+  it('folds the terms away, after the timeline', async () => {
+    const encyclopedia = new FakeEncyclopedia();
+    encyclopedia.articles['Cohere'] = COHERE;
+    const app = await setup({ summaries: briefWithTerms(), encyclopedia });
+    await publish([{ guid: 'a', title: 'Cohere raises a round', host: 'wire.example.com' }]);
+    const story = storyOf('a');
+    app.storyPipeline.requestSummary(story.id);
+    await waitFor(() => app.stories.get(story.id)!.termsState === 'ready');
+
+    server = buildServer(app);
+    const page = await server.inject({ method: 'GET', url: `/stories/${story.id}` });
+    const { document } = parseHTML(page.body);
+    const panel = document.querySelector('details.terms-panel');
+    expect(panel).not.toBeNull();
+    // Folded away: the reader opens it when they want it.
+    expect(panel!.hasAttribute('open')).toBe(false);
+    // After the timeline: the story is what the reader came for.
+    const panels = [...document.querySelectorAll('.story-detail > section, .story-detail > details')];
+    const timeline = panels.findIndex((p) => p.querySelector('.timeline'));
+    const terms = panels.findIndex((p) => p.classList.contains('terms-panel'));
+    expect(timeline).toBeGreaterThanOrEqual(0);
+    expect(terms).toBeGreaterThan(timeline);
+  });
+
   it('answers with the explanation of a term', async () => {
     const encyclopedia = new FakeEncyclopedia();
     encyclopedia.articles['Cohere'] = COHERE;

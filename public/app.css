@@ -369,7 +369,8 @@ body.map-open { overflow: hidden; }
 .term-card-name { font-weight: 700; }
 .term-card-desc { color: var(--text-2); }
 .term-card-source { font-size: .85rem; }
-.terms-panel .term-list { list-style: none; margin: .25rem 0; padding: 0; display: flex; flex-direction: column; }
+.terms-panel > summary { font-size: 1.05rem; }
+.terms-panel .term-list { list-style: none; margin: .5rem 0 .25rem; padding: 0; display: flex; flex-direction: column; }
 .terms-panel .term-entry, .glossary-detail .term-entry { display: flex; flex-direction: column; gap: .15rem; padding: .55rem 0; border-top: 1px solid var(--border); }
 .terms-panel .term-entry:first-child, .glossary-detail .term-entry:first-child { border-top: 0; }
 .term-name { font-weight: 700; }

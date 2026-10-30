@@ -187,7 +187,8 @@ a key.
 - **Terms:** a name the reader may not know is a button in the brief, the headline and
   the timeline; tapping it opens a card with a one or two sentence explanation and a
   link to its source. The story page lists the terms of the story with their
-  explanations, **Explain the terms** looks up the ones a brief does not name, and
+  explanations in a panel that stands after the timeline and is folded away until the
+  reader opens it, **Explain the terms** looks up the ones a brief does not name, and
   **Explain again** refreshes them. The **Glossary** page in the navigation lists
   everything Mimir knows, grouped by kind. See **Terms and the glossary** below.
 - **Articles:** sort by rank, personal relevance, publication or discovery; search title,
