@@ -779,6 +779,9 @@ function termsPanel(s: StoryDetail): SafeHtml {
             ${source ? html`<a class="term-source" href="${source.url}" target="_blank" rel="noopener noreferrer">${source.name}</a>` : null}
             ${t.status === 'unknown' ? html`<span class="muted small">not explained</span>` : null}
             ${t.sources.length ? cite(t.sources, index) : null}
+            <form method="post" action="/stories/${s.id}/terms/${encodeURIComponent(t.key)}" class="inline">
+              <button type="submit" class="secondary small" ${waiting ? html`disabled` : null}>Explain again</button>
+            </form>
           </li>`;
         })}</ul>`
       : html`<p class="muted">No term of this story has been explained yet.</p>`}

@@ -308,6 +308,51 @@ describe('the encyclopedia', () => {
     expect(await wiki(fetchImpl).lookup('CTI-REALM')).toBeNull();
   });
 
+  it('takes a search hit whose title does not carry the name', async () => {
+    // "A2A" is an Italian utility; the protocol the story means is written "Agent2Agent".
+    const { fetchImpl } = fake(
+      {
+        Agent2Agent: {
+          title: 'Agent2Agent',
+          description: 'Open protocol for communication between AI agents',
+          extract: 'Agent2Agent (A2A) is an open protocol that defines how artificial intelligence agents communicate.',
+          titles: { canonical: 'Agent2Agent' },
+        },
+      },
+      { query: { search: [{ title: 'A2A' }, { title: 'Agent2Agent' }] } },
+    );
+    const article = await wiki(fetchImpl).lookup('A2A');
+    expect(article!.title).toBe('Agent2Agent');
+  });
+
+  it('takes the article that carries the legal suffix of a company', async () => {
+    const { fetchImpl } = fake({
+      Okta: {
+        title: 'Okta, Inc.',
+        description: 'American information technology company',
+        extract: 'Okta, Inc. is an American identity and access management company based in San Francisco.',
+        titles: { canonical: 'Okta, Inc.' },
+      },
+    });
+    const article = await wiki(fetchImpl).lookup('Okta');
+    expect(article!.title).toBe('Okta, Inc.');
+  });
+
+  it('answers with the article it has, when none of them fits the note', async () => {
+    // The story means Chromium's WebGPU; the encyclopedia has the hour before sunrise.
+    // The note the story made is what tells the two apart, so it is handed on.
+    const { fetchImpl } = fake({
+      Dawn: {
+        title: 'Dawn',
+        description: 'Time that marks the beginning of twilight before sunrise',
+        extract: 'Dawn is the time that marks the beginning of twilight before sunrise.',
+        titles: { canonical: 'Dawn' },
+      },
+    });
+    const article = await wiki(fetchImpl).lookup('Dawn', null, "Chromium's WebGPU implementation for inference");
+    expect(article!.title).toBe('Dawn');
+  });
+
   it('says so when the encyclopedia cannot answer', async () => {
     const fetchImpl = (async () => new Response('nope', { status: 503 })) as typeof fetch;
     await expect(wiki(fetchImpl).lookup('Cohere')).rejects.toThrow(/503/);
@@ -517,6 +562,57 @@ describe('the terms of a story', () => {
     expect(app.stories.get(storyOf('b').id)!.terms[0]!.summary).toMatch(/Canadian artificial intelligence company/);
   });
 
+  it('explains a term from the articles when the encyclopedia answered about another thing', async () => {
+    // The encyclopedia answered with the article about the Italian utility, and the
+    // model, which has read the articles, says that is not what the story means.
+    const summaries = new MockSummaryProvider('ok', 0, [], [
+      { name: 'A2A', kind: 'acronym', wiki: 'A2A', role: 'protocol for agents to talk to each other' },
+    ]);
+    const terms = new MockTermsProvider('ok', [], 0, { A2A: false });
+    const encyclopedia = new FakeEncyclopedia();
+    encyclopedia.articles['A2A'] = {
+      title: 'A2A',
+      description: 'Italian utilities company',
+      extract: 'A2A is an Italian multi-utility company registered in Brescia.',
+      url: 'https://en.wikipedia.org/wiki/A2A',
+    };
+    const app = await setup({ summaries, terms, encyclopedia });
+    await publish([{ guid: 'a', title: 'The agent protocol arrives', host: 'wire.example.com' }]);
+    const story = storyOf('a');
+
+    app.storyPipeline.requestSummary(story.id);
+    await waitFor(() => app.stories.get(story.id)!.termsState === 'ready');
+
+    const s = app.stories.get(story.id)!;
+    expect(s.terms[0]).toMatchObject({ status: 'explained', sourceName: 'Mimir, from the articles' });
+    expect(s.terms[0]!.description).toBeNull();
+    expect(s.terms[0]!.summary).toMatch(/A2A is what the articles are about/);
+  });
+
+  it('explains one term again when the reader says the explanation is wrong', async () => {
+    const encyclopedia = new FakeEncyclopedia();
+    encyclopedia.articles['Cohere'] = COHERE;
+    const app = await setup({ summaries: briefWithTerms(), encyclopedia });
+    await publish([{ guid: 'a', title: 'Cohere raises a round', host: 'wire.example.com' }]);
+    const story = storyOf('a');
+    app.storyPipeline.requestSummary(story.id);
+    await waitFor(() => app.stories.get(story.id)!.termsState === 'ready');
+    expect(encyclopedia.calls).toHaveLength(1);
+
+    server = buildServer(app);
+    const page = await server.inject({ method: 'GET', url: `/stories/${story.id}` });
+    expect(page.statusCode).toBe(200);
+    const { document } = parseHTML(page.body);
+    expect(document.querySelector('.terms-panel form[action$="/terms/cohere"]')).not.toBeNull();
+
+    const res = await server.inject({ method: 'POST', url: `/stories/${story.id}/terms/cohere` });
+    expect(res.statusCode).toBe(303);
+    await waitFor(() => app.stories.get(story.id)!.termsState === 'ready');
+    // The term was put back on the shelf, and the encyclopedia was asked about it again.
+    expect(encyclopedia.calls).toHaveLength(2);
+    expect(app.stories.get(story.id)!.terms[0]!.summary).toMatch(/Canadian artificial intelligence company/);
+  });
+
   it('marks the terms in the brief and lists them on the story page', async () => {
     const encyclopedia = new FakeEncyclopedia();
     encyclopedia.articles['Cohere'] = COHERE;
@@ -591,6 +687,48 @@ describe('the terms of a story', () => {
     const { document } = parseHTML(page.body);
     expect(document.body.textContent).toContain('Cohere');
     expect(document.body.textContent).toContain('Canadian artificial intelligence company');
+  });
+});
+
+describe('a name that stands for two things', () => {
+  const PT = { key: 'pt', name: 'PT', description: "Lula's Workers' Party", summary: null };
+  const CNN = { key: 'cnn', name: 'CNN', description: 'A convolutional neural network', summary: null };
+  const CUBE = { key: 'cube', name: 'Cube', description: "Roblox's generative system", summary: null };
+
+  /** The terms that were marked in a text, with the text that was marked. */
+  function marked(text: string, terms: MarkableTerm[]): string[] {
+    const { document } = parseHTML(`<body>${markTerms(text, terms).value}</body>`);
+    return [...document.querySelectorAll('button.term')].map((b) => b.textContent ?? '');
+  }
+
+  it('marks the name where the words of its reading stand near it', () => {
+    const glossary = markingTerms([PT], []);
+    expect(marked('Die linken Arbeiterpartei PT von Lula hat den Etat vorgelegt.', glossary)).toEqual(['PT']);
+    expect(marked('The Workers Party PT won the vote in Brazil.', glossary)).toEqual(['PT']);
+  });
+
+  it('does not mark the name where its reading is not meant', () => {
+    const glossary = markingTerms([PT], []);
+    // The Pacific time zone is not the party.
+    expect(marked('The call starts at 3 PM PT.', glossary)).toEqual([]);
+  });
+
+  it('marks the name in the story that named it, whatever the text around it says', () => {
+    const glossary = markingTerms([PT], [PT]);
+    expect(marked('The call starts at 3 PM PT.', glossary)).toEqual(['PT']);
+  });
+
+  it('tells a neural network from a television channel', () => {
+    const glossary = markingTerms([CNN], []);
+    expect(marked('The CNN layers are trained on MNIST.', glossary)).toEqual(['CNN']);
+    expect(marked('CNN reported from Washington on Tuesday.', glossary)).toEqual([]);
+  });
+
+  it('matches a name with two readings as it is written', () => {
+    const glossary = markingTerms([CUBE], []);
+    // The solid with six faces is written in lower case.
+    expect(marked('The cube has six faces.', glossary)).toEqual([]);
+    expect(marked('Roblox Cube makes 3D content.', glossary)).toEqual(['Cube']);
   });
 });
 

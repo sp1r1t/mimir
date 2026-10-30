@@ -11,8 +11,9 @@ import type { ProfileRepository } from '../profile/repository.js';
 import { SummaryProviderError, type SummaryProvider, type SummaryTrigger } from '../summaries/provider.js';
 import { gistTexts, isBrief, parseSummary, preparePrompt, selectArticles, SUMMARY_PROMPT_VERSION, SummaryValidationError, type BriefContent } from '../summaries/summary.js';
 import { termKey, type FoundTerm, type TermKind } from '../terms/schema.js';
-import { dropFragmentTerms, firstSentences, parseExplanations, parseTerms, prepareExplainPrompt, prepareTermsPrompt, TermsValidationError } from '../terms/terms.js';
-import type { Encyclopedia } from '../terms/wikipedia.js';
+import { clearFit, fitsRole } from '../terms/fit.js';
+import { dropFragmentTerms, firstSentences, parseExplanations, parseTerms, parseVerifications, prepareExplainPrompt, prepareTermsPrompt, prepareVerifyPrompt, TermsValidationError, type SuspectTerm } from '../terms/terms.js';
+import type { Encyclopedia, TermArticle } from '../terms/wikipedia.js';
 import { backoffMs, sleep } from '../util/backoff.js';
 import { iso, systemClock, type Clock } from '../util/time.js';
 import { assessStory, priorityAt } from './assessment.js';
@@ -295,8 +296,30 @@ export class StoryPipeline {
     return { queued: true, message: 'Looking for the places of this story.' };
   }
 
-  /** The reader asked for the glossary: name the terms of this story and explain them. */
+  /**
+   * The reader asked for the glossary: name the terms of this story and explain them.
+   *
+   * Asking again means asking again: the terms the story already has are put back on
+   * the shelf, so that the encyclopedia is asked for them once more. A term that was
+   * explained from the wrong article — "A2A" as an Italian utility rather than a
+   * protocol for agents — is corrected this way, without waiting for new news.
+   */
   requestTerms(storyId: number): { queued: boolean; message: string } {
+    return this.queueTerms(storyId, () => this.d.stories.resetStoryTerms(storyId));
+  }
+
+  /** The reader said that one term is wrong: that one term is looked up again. */
+  requestTermAgain(storyId: number, key: string): { queued: boolean; message: string } {
+    const term = this.d.stories.termByKey(key);
+    if (!term) return { queued: false, message: 'Term not found.' };
+    return this.queueTerms(storyId, () => {
+      this.d.stories.resetTerm(key);
+      return [key];
+    });
+  }
+
+  /** Queue the glossary lookup of a story, after its terms have been put back. */
+  private queueTerms(storyId: number, reset: () => string[]): { queued: boolean; message: string } {
     const s = this.d.stories.item(storyId);
     if (!s || s.status !== 'active') return { queued: false, message: 'Story not found.' };
     if (!this.d.config.terms.enabled) return { queued: false, message: 'Term lookup is turned off.' };
@@ -305,6 +328,7 @@ export class StoryPipeline {
     if (!this.termsFromBrief(storyId) && !this.d.terms.isConfigured()) {
       return { queued: false, message: this.d.summaries.configurationHint() ?? 'No summary provider configured.' };
     }
+    const keys = reset();
     const payload: TermsPayload = { storyId, trigger: 'manual', force: true };
     const key = `story:${storyId}`;
     const opts = { priority: MANUAL_PRIORITY, maxAttempts: this.d.config.summaries.maxAttempts };
@@ -313,7 +337,7 @@ export class StoryPipeline {
     }
     this.d.stories.setTermsState(storyId, 'pending');
     this.termsWorker.notify();
-    return { queued: true, message: 'Looking for the terms of this story.' };
+    return { queued: true, message: keys.length ? 'Looking for the terms of this story again.' : 'Looking for the terms of this story.' };
   }
 
   merge(sourceId: number, targetId: number): void {    this.d.stories.merge(sourceId, targetId);
@@ -791,22 +815,40 @@ export class StoryPipeline {
     st.saveTerms(storyId, named);
 
     const unknown: { name: string; kind: TermKind; key: string }[] = [];
+    const answered: { key: string; name: string; kind: TermKind; role: string; article: TermArticle }[] = [];
     for (const t of st.termsOf(storyId)) {
       // Only a term that is still waiting is looked up: one that is explained is done,
       // and one the encyclopedia did not know is not asked again unless a better title
       // came with it.
       if (t.status !== 'pending') continue;
-      const article = await this.lookupTerm(t.name, t.wiki, signal);
+      const article = await this.lookupTerm(t.name, t.wiki, t.role, signal);
       if (article) {
-        st.explainTerm(t.key, {
-          summary: firstSentences(article.extract ?? article.description ?? '', 2),
-          description: article.description,
-          sourceName: 'Wikipedia',
-          sourceUrl: article.url,
-        });
+        answered.push({ key: t.key, name: t.name, kind: t.kind, role: t.role ?? '', article });
       } else {
         unknown.push({ name: t.name, kind: t.kind, key: t.key });
       }
+    }
+
+    // The encyclopedia answers with the article whose title matches the name, and a name
+    // is often two things: "A2A" is an Italian utility and Google's protocol for agents
+    // to talk to each other, "Dawn" is the hour before sunrise and Chromium's WebGPU
+    // implementation. The note the story made about the term says which of them the
+    // story means. Where the article and the note do not plainly agree, the model,
+    // which has read the articles, has the last word.
+    const doubtful = answered.filter((a) => a.role && !clearFit(a.article, a.role));
+    const wrong = doubtful.length ? await this.verifyArticles(doubtful, signal) : new Set<string>();
+    for (const d of doubtful) {
+      if (!wrong.has(d.key)) continue;
+      unknown.push({ name: d.name, kind: d.kind, key: d.key });
+    }
+    for (const a of answered) {
+      if (wrong.has(a.key)) continue;
+      st.explainTerm(a.key, {
+        summary: firstSentences(a.article.extract ?? a.article.description ?? '', 2),
+        description: a.article.description,
+        sourceName: 'Wikipedia',
+        sourceUrl: a.article.url,
+      });
     }
 
     if (unknown.length) {
@@ -928,12 +970,50 @@ export class StoryPipeline {
     return { explained: parsed.map((p) => ({ key: termKey(p.name), explanation: p.explanation })), reason: null };
   }
 
+  /**
+   * Ask the model whether the encyclopedia's article is about the thing the story
+   * means. Without a model nobody can say, and the article stands.
+   */
+  private async verifyArticles(
+    answered: { key: string; name: string; role: string; article: TermArticle }[],
+    signal: AbortSignal,
+  ): Promise<Set<string>> {
+    const provider = this.d.terms;
+    if (!provider.isConfigured()) return new Set();
+    const suspects: SuspectTerm[] = answered.map((a) => ({
+      name: a.name,
+      role: a.role,
+      article: { title: a.article.title, description: a.article.description, extract: a.article.extract },
+    }));
+    const prompt = prepareVerifyPrompt(suspects, { language: this.d.config.summaries.language });
+    const capacity = await provider.capacity('manual', signal);
+    if (!capacity.ok) {
+      const until = capacity.retryAt ? Math.max(60_000, Date.parse(capacity.retryAt) - Date.now()) : 15 * 60_000;
+      throw new JobError(capacity.reason, { retryable: true, defer: true, delayMs: until });
+    }
+    let result;
+    try {
+      result = await provider.generate({ system: prompt.system, user: prompt.user, maxOutputTokens: this.d.config.terms.maxOutputTokens }, signal);
+    } catch (err) {
+      if (signal.aborted) throw err;
+      const e = err instanceof SummaryProviderError ? err : new SummaryProviderError(err instanceof Error ? err.message : String(err), 'unavailable');
+      throw new JobError(e.message, { retryable: true, delayMs: e.retryAfterMs ?? undefined });
+    }
+    const fits = parseVerifications(result.text);
+    const wrong = new Set<string>();
+    for (const a of answered) {
+      const verdict = fits.get(termKey(a.name));
+      if (verdict === false) wrong.add(a.key);
+    }
+    return wrong;
+  }
+
   /** The encyclopedia gets three tries: it is a public service and it says so. */
-  private async lookupTerm(name: string, wiki: string | null, signal?: AbortSignal) {
+  private async lookupTerm(name: string, wiki: string | null, role: string | null, signal?: AbortSignal) {
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        return await this.d.wikipedia.lookup(name, wiki, signal);
+        return await this.d.wikipedia.lookup(name, wiki, role, signal);
       } catch (err) {
         lastError = err;
         if (attempt < 3) await sleep(2000 * attempt, signal);

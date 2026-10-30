@@ -29,6 +29,8 @@ export class MockTermsProvider implements SummaryProvider {
       { name: 'Cohere', kind: 'organisation', wiki: 'Cohere', role: 'the company the story is about' },
     ],
     private readonly delayMs = 0,
+    /** What the mock answers when the encyclopedia's article is put to it, by name. */
+    private readonly verdicts: Record<string, boolean> = {},
   ) {}
 
   isConfigured(): boolean {
@@ -58,12 +60,20 @@ export class MockTermsProvider implements SummaryProvider {
       throw new SummaryProviderError(`Mock provider failure (${this.mode})`, this.mode, this.mode === 'rate_limited' ? 1000 : null);
     }
     const input = JSON.parse(req.user) as {
-      articles: { id: number }[];
-      terms?: { name: string }[];
+      articles?: { id: number }[];
+      terms?: { name: string; note?: string }[];
     };
-    const source = input.articles[0]?.id;
+    const source = input.articles?.[0]?.id;
+    // The check on the encyclopedia's answer asks whether the article fits the note the
+    // story made about the term.
+    const suspects = input.terms ?? [];
+    if (suspects.length && suspects[0]?.note !== undefined) {
+      return this.result(
+        JSON.stringify({ terms: suspects.map((t) => ({ name: t.name, fits: this.verdicts[t.name] ?? true })) }),
+      );
+    }
     // The explaining prompt carries the terms it asks about; the naming prompt does not.
-    const asked = input.terms?.map((t) => t.name) ?? [];
+    const asked = suspects.map((t) => t.name);
     const terms = this.mode === 'empty'
       ? []
       : asked.length

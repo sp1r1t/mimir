@@ -930,6 +930,39 @@ export class StoryRepository {
       .run(storyId, key);
   }
 
+  /**
+   * Put a term back on the shelf: it is looked up again the next time the terms of its
+   * story are explained.
+   *
+   * The explanation it has is taken away with it. A term that is looked up again has
+   * not been explained yet, and keeping the old words while the new ones are being
+   * found would show the reader two answers at once.
+   */
+  resetTerm(key: string): void {
+    this.db
+      .prepare(
+        `UPDATE terms SET status = 'pending', summary = NULL, description = NULL,
+                source_name = NULL, source_url = NULL, updated_at = ?
+           WHERE term_key = ?`,
+      )
+      .run(this.now(), key);
+  }
+
+  /**
+   * The same, for the terms of a story: every one of them is looked up again. The
+   * glossary is shared, so this is also what happens to the term in the other stories
+   * that name it — there is one explanation of a term, not one per story.
+   */
+  resetStoryTerms(storyId: number): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT t.term_key AS key FROM story_terms st JOIN terms t ON t.id = st.term_id WHERE st.story_id = ?`,
+      )
+      .all(storyId) as { key: string }[];
+    for (const row of rows) this.resetTerm(row.key);
+    return rows.map((r) => r.key);
+  }
+
   /** Give a term its explanation. */
   explainTerm(
     key: string,

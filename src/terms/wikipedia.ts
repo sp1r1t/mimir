@@ -1,4 +1,5 @@
 import { parseRetryAfter, sleep } from '../util/backoff.js';
+import { fitsRole } from './fit.js';
 
 /** What an encyclopedia says about a term. */
 export interface TermArticle {
@@ -23,8 +24,13 @@ export interface WikipediaOptions {
 
 /** The encyclopedia, as the rest of Mimir uses it. */
 export interface Encyclopedia {
-  /** The article that explains a term, or nothing when there is none. */
-  lookup(name: string, hint?: string | null, signal?: AbortSignal): Promise<TermArticle | null>;
+  /**
+   * The article that explains a term, or nothing when there is none. The note the story
+   * made about the term ("Chromium's WebGPU implementation") says which of the several
+   * things the name stands for the story means; an article about another of them is not
+   * an answer.
+   */
+  lookup(name: string, hint?: string | null, role?: string | null, signal?: AbortSignal): Promise<TermArticle | null>;
 }
 
 interface RestSummary {
@@ -46,7 +52,7 @@ interface SearchAnswer {
  * A name on its own is often not enough to find the right article. "Sandbox" is a pit
  * for children and a place where code runs; "Cohere" is a company and a physics word.
  * So the title the model gives is tried first, the plain name second, and a search last,
- * where only a title that carries the name is accepted: the search answers "CTI-REALM"
+ * where the articles that carry the name come first: the search answers "CTI-REALM"
  * with an article about coral reefs, which is no answer at all.
  *
  * The encyclopedia also answers with a redirect: "Sandbox" leads to "Sandpit", a
@@ -74,6 +80,8 @@ export class Wikipedia implements Encyclopedia {
     const canonical = data.titles?.canonical ?? data.title ?? wanted;
     const extract = data.extract?.trim() || null;
     const description = data.description?.trim() || null;
+    // A page that does not exist answers with an error, not with an article.
+    if (!extract && !description) return null;
     // A redirect leads to a different article. It is only the answer when the article
     // introduces the name that was asked for.
     if (!sameArticle(wanted, canonical) && !introduces(extract, description, wanted)) return null;
@@ -87,24 +95,45 @@ export class Wikipedia implements Encyclopedia {
 
   /**
    * The article that explains a term: the title the model gave first, the plain name
-   * second, and a validated search last.
+   * second, and a validated search last. An article that does not explain the term the
+   * way the story uses it is not an answer, and the next candidate is tried.
+   *
+   * When no candidate fits, the best one is returned all the same: the caller holds the
+   * note the story made about the term and can judge the article for itself. A term the
+   * encyclopedia has nothing at all about is explained from the articles instead.
    */
-  async lookup(name: string, hint?: string | null, signal?: AbortSignal): Promise<TermArticle | null> {
+  async lookup(name: string, hint?: string | null, role?: string | null, signal?: AbortSignal): Promise<TermArticle | null> {
     const titles = [hint?.trim(), name.trim()].filter((t): t is string => !!t);
+    let fallback: TermArticle | null = null;
     for (const title of titles) {
       const article = await this.summary(title, signal);
-      if (article) return article;
+      if (!article) continue;
+      if (fitsRole(article, role)) return article;
+      fallback ??= article;
     }
-    // Nothing under either title: a search may still know the term.
-    const found = await this.searchTitle(name, hint ?? null, signal);
-    if (!found) return null;
-    return this.summary(found, signal);
+    // Nothing under either title fits the story: a search may still know the term.
+    for (const title of await this.searchTitles(name, hint ?? null, signal)) {
+      const article = await this.summary(title, signal);
+      if (!article) continue;
+      if (fitsRole(article, role)) return article;
+      fallback ??= article;
+    }
+    return fallback;
   }
 
-  /** The title of an article that carries the name, and nothing else. */
-  private async searchTitle(name: string, hint: string | null, signal?: AbortSignal): Promise<string | null> {
+  /**
+   * The titles of the articles that could carry the name, best first: the article named
+   * exactly as the term is, then the one with the qualifier the model asked for, then
+   * the others the search found.
+   *
+   * The others are worth trying even when their titles do not carry the name: "A2A" is
+   * an Italian utility, and the protocol the story means is written "Agent2Agent". The
+   * note the story made says which of them is meant, and one that does not fit is
+   * passed over.
+   */
+  private async searchTitles(name: string, hint: string | null, signal?: AbortSignal): Promise<string[]> {
     const wanted = normalize(name);
-    if (!wanted) return null;
+    if (!wanted) return [];
     const url = new URL('/w/api.php', this.opts.baseUrl);
     url.searchParams.set('action', 'query');
     url.searchParams.set('list', 'search');
@@ -112,25 +141,37 @@ export class Wikipedia implements Encyclopedia {
     url.searchParams.set('srlimit', '10');
     url.searchParams.set('format', 'json');
     const body = await this.get(url, 0, signal);
-    if (body === null) return null;
+    if (body === null) return [];
     const hits = (body as SearchAnswer).query?.search ?? [];
     const qualifier = qualifierOf(hint);
-    let fallback: string | null = null;
+    const exact: string[] = [];
+    const asked: string[] = [];
+    const others: string[] = [];
     for (const hit of hits) {
       const title = hit.title?.trim();
       if (!title) continue;
       const normalized = normalize(title);
       // The article is named exactly as the term is: the best possible answer.
-      if (normalized === wanted) return title;
+      if (normalized === wanted) {
+        if (!exact.includes(title)) exact.push(title);
+        continue;
+      }
       // The article is the term with a qualifier: "Sandbox (computer security)". The
       // qualifier the model asked for wins over any other.
-      if (!normalized.startsWith(`${wanted} (`) || !normalized.endsWith(')')) continue;
-      const q = normalized.slice(wanted.length + 2, -1);
-      if (!q || q === 'disambiguation' || q.endsWith('disambiguation')) continue;
-      if (qualifier && qualifierWords(qualifier).every((w) => q.includes(w))) return title;
-      if (!fallback) fallback = title;
+      if (normalized.startsWith(`${wanted} (`) && normalized.endsWith(')')) {
+        const q = normalized.slice(wanted.length + 2, -1);
+        if (!q || q === 'disambiguation' || q.endsWith('disambiguation')) continue;
+        if (qualifier && qualifierWords(qualifier).every((w) => q.includes(w))) {
+          if (!asked.includes(title)) asked.push(title);
+          continue;
+        }
+        if (!others.includes(title)) others.push(title);
+        continue;
+      }
+      // Any other article the search found: it may be the one, under another name.
+      if (!others.includes(title)) others.push(title);
     }
-    return fallback;
+    return [...exact, ...asked, ...others].slice(0, 8);
   }
 
   /**
@@ -183,7 +224,9 @@ function sameArticle(requested: string, canonical: string): boolean {
   const a = normalize(requested);
   const b = normalize(canonical);
   if (a === b) return true;
-  return b.startsWith(`${a} (`) && b.endsWith(')');
+  if (b.startsWith(`${a} (`) && b.endsWith(')')) return true;
+  // The article carries the legal suffix of a company: "Okta" is "Okta, Inc.".
+  return b.startsWith(`${a},`);
 }
 
 /** Does the article introduce the name that was asked for? "the FBI" and "(FBI)" count. */

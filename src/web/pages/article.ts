@@ -32,7 +32,9 @@ function contentSummary(a: ArticleDetail): string {
 }
 
 function paragraphs(text: string, terms: Parameters<typeof markTerms>[1]): SafeHtml {
-  return html`${text.split(/\n{2,}/).map((p) => html`<p>${markTerms(p, terms)}</p>`)}`;
+  // The whole text decides which reading of a name is meant, and the paragraphs are
+  // marked one by one: a name in the first paragraph is the one the article is about.
+  return html`${text.split(/\n{2,}/).map((p) => html`<p>${markTerms(p, terms, text)}</p>`)}`;
 }
 
 function json(v: unknown): string {

@@ -431,12 +431,35 @@ redone every ten minutes, as the news grows.
 
 **Where the explanation comes from.** Each term is looked up in Wikipedia first: the
 title the model gave ("Sandbox (software development)" for an ambiguous name), then the
-bare name, then a search whose hits are only accepted when their title carries the
-name. A page that only lists several meanings explains nothing and is not an answer,
-and neither is a redirect to a different thing entirely: "Sandbox" leads to "Sandpit",
-a pit for children, so it is refused — while "Federal Bureau of Investigation", which
-introduces the name it was asked for, is accepted. The explanation is the first two
-sentences of the article, and the source link points at the article itself.
+bare name, then a search whose hits carry the name first. A page that only lists
+several meanings explains nothing and is not an answer, and neither is a redirect to a
+different thing entirely: "Sandbox" leads to "Sandpit", a pit for children, so it is
+refused — while "Federal Bureau of Investigation", which introduces the name it was
+asked for, is accepted. The explanation is the first two sentences of the article, and
+the source link points at the article itself.
+
+**When the encyclopedia answers about the wrong thing.** A name is often two things, and
+the encyclopedia answers with the article whose title matches the name: "A2A" is an
+Italian utility and Google's protocol for agents to talk to each other, "Dawn" is the
+hour before sunrise and Chromium's WebGPU implementation, "Okta" is a scale for cloud
+cover and a company that sells logins. The note the story made about the term says
+which of the two the story means — "Chromium's WebGPU implementation" — and the article
+has to agree with it. Where the article and the note do not plainly agree, the model,
+which has read the articles, is asked whether they are about the same thing, and an
+article about the other thing is refused: the term is explained from the articles
+instead. The encyclopedia is asked for a term under a title it does not know, too: the
+search hits are tried in order, and "Agent2Agent" is accepted for "A2A".
+
+**A name that stands for two things.** The glossary is shared, so a term explained for
+one story is marked in every story and article that names it. A name that means two
+things needs more than that: "PT" is Lula's Workers' Party in one story and the
+Pacific time zone in half a dozen others, "RTS" is Radio Television of Serbia in one
+and a real-time strategy game in several, "GR" is a Debian General Resolution and a
+Fourier robot. Such a name is marked only where the words of its reading stand near
+it — "PT" is a button where the sentence says party, workers or Lula, and nowhere
+else — and it is matched as the news writes it, so the "cube" of a solid with six
+faces is never the "Cube" of Roblox's generative system. The story that named the term
+marks it wherever it stands, because that story knows which of the two it means.
 
 **When Wikipedia does not know.** A term the encyclopedia does not have is explained
 from the articles instead, by a second reading of them: one or two sentences of what
@@ -445,7 +468,10 @@ Mimir rather than from Wikipedia. A term that neither source can explain stays i
 list, marked "not explained", rather than being filled with a guess. The first
 explanation a term ever gets is never overwritten, so the glossary does not change its
 mind; a term the encyclopedia did not know is only looked up again when a better title
-arrives with it.
+arrives with it. The reader can ask for a term to be looked up again as well: the
+**Explain again** button next to a term on the story page puts that term back on the
+shelf and asks the encyclopedia about it once more, and the **Explain again** button of
+the panel does the same for every term of the story.
 
 **When it runs.** The terms come with the brief, so a brief that names its terms
 brings the glossary along: the lookup starts by itself once the brief is written. A
@@ -468,6 +494,7 @@ set `WIKIPEDIA_USER_AGENT` to your own to be reachable.
 - `GET /api/terms/:key` — the explanation of one term, as JSON.
 - `GET /api/stories/:id/terms` — the terms of a story and the state of the lookup.
 - `POST /stories/:id/terms` — asks for the terms of a story to be looked up.
+- `POST /stories/:id/terms/:key` — asks for one term to be looked up again.
 
 ## Live updates
 

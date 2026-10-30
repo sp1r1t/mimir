@@ -334,6 +334,17 @@ export function buildServer(app: App): FastifyInstance {
   server.post('/stories/:id/terms', termsHandler);
   server.post('/api/stories/:id/terms', termsHandler);
 
+  // One term of a story is explained again: the reader says the explanation is wrong,
+  // and the term is looked up once more.
+  server.post('/stories/:id/terms/:key', async (req, reply) => {
+    const id = app.stories.resolve(idParam(req));
+    if (id == null) return reply.code(404).send({ error: 'Story not found' });
+    const key = decodeURIComponent((req.params as { key?: string }).key ?? '');
+    const res = app.storyPipeline.requestTermAgain(id, key);
+    if (wantsJson(req)) return reply.code(res.queued ? 202 : 200).send(res);
+    return redirect(reply, `/stories/${id}`, res.message);
+  });
+
   server.get('/api/stories/:id/terms', async (req, reply) => {
     const id = app.stories.resolve(idParam(req));
     if (id == null) return reply.code(404).send({ error: 'Story not found' });
