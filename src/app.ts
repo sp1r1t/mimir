@@ -27,6 +27,9 @@ import { MockSummaryProvider } from './summaries/mock.js';
 import { DisabledSummaryProvider, type SummaryProvider } from './summaries/provider.js';
 import { systemClock, type Clock } from './util/time.js';
 
+/** How often the ordinary words of the glossary are counted again. */
+const VOCABULARY_REFRESH_MS = 10 * 60_000;
+
 export interface App {
   config: AppConfig;
   db: DB;
@@ -137,6 +140,17 @@ export function createApp(
   );
 
   let started = false;
+  let vocabularyTimer: NodeJS.Timeout | null = null;
+  // The news grows, and so does what it writes in lower case: the names that are
+  // ordinary words are counted again every now and then.
+  const refreshVocabulary = (): void => {
+    try {
+      const counted = stories.refreshOrdinaryTerms();
+      log.info(counted, 'counted the ordinary words of the glossary');
+    } catch (err) {
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, 'could not count the ordinary words of the glossary');
+    }
+  };
   return {
     config,
     db,
@@ -164,10 +178,17 @@ export function createApp(
       pipeline.start();
       storyPipeline.start();
       scheduler.start();
+      refreshVocabulary();
+      vocabularyTimer = setInterval(refreshVocabulary, VOCABULARY_REFRESH_MS);
+      vocabularyTimer.unref?.();
     },
     async stop() {
       if (!started) return;
       started = false;
+      if (vocabularyTimer) {
+        clearInterval(vocabularyTimer);
+        vocabularyTimer = null;
+      }
       await scheduler.stop();
       await Promise.all([pipeline.stop(), storyPipeline.stop()]);
     },

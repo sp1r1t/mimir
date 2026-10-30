@@ -37,6 +37,7 @@ export function glossaryPage(app: App, flash?: string | null): SafeHtml {
           <h3>${KIND_LABEL[kind]}</h3>
           <ul class="term-list">${terms.filter((t) => t.kind === kind).map((t) => html`<li class="term-entry">
             <span class="term-name">${t.name}</span>
+            ${t.ordinary ? html`<span class="muted small">an ordinary word: this is what it means in the stories that use it that way</span>` : null}
             ${t.description ? html`<div class="term-desc">${t.description}</div>` : null}
             ${t.summary ? html`<div class="term-summary">${t.summary}</div>` : null}
             <div class="meta">

@@ -5,6 +5,7 @@ import { articleProvenance, type ArticleProvenance } from '../repo/provenance.js
 import { parseStoredContent, type SummaryArticle, type SummaryStory, type StorySummaryContent, type UsedArticle } from '../summaries/summary.js';
 import type { FoundTerm, GlossaryEntry, TermKind, TermStatus } from '../terms/schema.js';
 import { termKey } from '../terms/schema.js';
+import { countWords, ordinaryNames } from '../terms/vocabulary.js';
 import { iso, systemClock, type Clock } from '../util/time.js';
 import type { AssessmentMember, StoryAssessment } from './assessment.js';
 import type { CandidateJudgement, MatchCandidate, MatchReport } from './matcher.js';
@@ -20,6 +21,11 @@ export interface TermRecord extends GlossaryEntry {
   id: number;
   createdAt: string;
   updatedAt: string;
+  /**
+   * The news writes this name in lower case most of the time: it is an ordinary word
+   * that one story gave a meaning to, not a name the reader meets everywhere.
+   */
+  ordinary: boolean;
 }
 
 /** A term of a story: the glossary's term, and the story's own note about it. */
@@ -947,13 +953,13 @@ export class StoryRepository {
     const rows = this.db
       .prepare(
         `SELECT t.id, t.term_key AS key, t.name, t.kind, t.wiki, t.summary, t.description,
-                t.source_name AS sourceName, t.source_url AS sourceUrl, t.status,
+                t.source_name AS sourceName, t.source_url AS sourceUrl, t.status, t.ordinary,
                 t.created_at AS createdAt, t.updated_at AS updatedAt, st.role, st.sources
            FROM story_terms st JOIN terms t ON t.id = st.term_id
            WHERE st.story_id = ? ORDER BY t.name`,
       )
-      .all(storyId) as (Omit<StoryTerm, 'sources'> & { sources: string })[];
-    return rows.map((r) => ({ ...r, sources: JSON.parse(r.sources) }));
+      .all(storyId) as (Omit<StoryTerm, 'sources' | 'ordinary'> & { sources: string; ordinary: number })[];
+    return rows.map((r) => ({ ...r, ordinary: r.ordinary === 1, sources: JSON.parse(r.sources) }));
   }
 
   /** One term of the glossary. */
@@ -961,35 +967,37 @@ export class StoryRepository {
     const r = this.db
       .prepare(
         `SELECT id, term_key AS key, name, kind, wiki, summary, description, source_name AS sourceName,
-                source_url AS sourceUrl, status, created_at AS createdAt, updated_at AS updatedAt
+                source_url AS sourceUrl, status, ordinary, created_at AS createdAt, updated_at AS updatedAt
            FROM terms WHERE term_key = ?`,
       )
-      .get(key) as TermRecord | undefined;
-    return r ?? null;
+      .get(key) as (Omit<TermRecord, 'ordinary'> & { ordinary: number }) | undefined;
+    return r ? { ...r, ordinary: r.ordinary === 1 } : null;
   }
 
   /** Every term Mimir can explain: the ones the reader may tap in a brief or an article. */
   glossary(): TermRecord[] {
-    return this.db
+    const rows = this.db
       .prepare(
         `SELECT id, term_key AS key, name, kind, wiki, summary, description, source_name AS sourceName,
-                source_url AS sourceUrl, status, created_at AS createdAt, updated_at AS updatedAt
+                source_url AS sourceUrl, status, ordinary, created_at AS createdAt, updated_at AS updatedAt
            FROM terms WHERE status = 'explained' ORDER BY name`,
       )
-      .all() as TermRecord[];
+      .all() as (Omit<TermRecord, 'ordinary'> & { ordinary: number })[];
+    return rows.map((r) => ({ ...r, ordinary: r.ordinary === 1 }));
   }
 
   /** The glossary, with the number of stories that name each term. */
   glossaryWithUse(): (TermRecord & { stories: number })[] {
-    return this.db
+    const rows = this.db
       .prepare(
         `SELECT t.id, t.term_key AS key, t.name, t.kind, t.wiki, t.summary, t.description,
-                t.source_name AS sourceName, t.source_url AS sourceUrl, t.status,
+                t.source_name AS sourceName, t.source_url AS sourceUrl, t.status, t.ordinary,
                 t.created_at AS createdAt, t.updated_at AS updatedAt,
                 (SELECT COUNT(*) FROM story_terms st WHERE st.term_id = t.id) AS stories
            FROM terms t WHERE t.status = 'explained' ORDER BY t.kind, t.name`,
       )
-      .all() as (TermRecord & { stories: number })[];
+      .all() as (Omit<TermRecord, 'ordinary'> & { ordinary: number; stories: number })[];
+    return rows.map((r) => ({ ...r, ordinary: r.ordinary === 1 }));
   }
 
   /** The kinds of term the glossary holds, for the reader who wants to browse it. */
@@ -997,6 +1005,24 @@ export class StoryRepository {
     return this.db
       .prepare('SELECT kind, COUNT(*) AS count FROM terms WHERE status = \'explained\' GROUP BY kind ORDER BY count DESC')
       .all() as { kind: TermKind; count: number }[];
+  }
+
+  /**
+   * Count the words of the news, and mark the names that turn out to be ordinary words:
+   * the news writes them in lower case most of the time, so they are words and not
+   * names. Such a name is only explained in the stories that use it that way.
+   */
+  refreshOrdinaryTerms(): { ordinary: number; terms: number } {
+    const names = this.db
+      .prepare("SELECT term_key AS key, name FROM terms WHERE status = 'explained'")
+      .all() as { key: string; name: string }[];
+    const ordinary = ordinaryNames(countWords(this.db), names);
+    this.db.transaction(() => {
+      this.db.prepare('UPDATE terms SET ordinary = 0').run();
+      const mark = this.db.prepare('UPDATE terms SET ordinary = 1 WHERE term_key = ?');
+      for (const key of ordinary) mark.run(key);
+    })();
+    return { ordinary: ordinary.size, terms: names.length };
   }
 
   /** A term's status, for the lookup that is still to come. */

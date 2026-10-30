@@ -7,7 +7,7 @@ import { html, raw, type SafeHtml } from '../html.js';
 import { layout } from '../layout.js';
 import { feedbackControls, statusBadge } from './inbox.js';
 import { articleLinks, discoveredVia } from '../provenance.js';
-import { markTerms, markTermsInHtml } from '../terms.js';
+import { markTerms, markTermsInHtml, markingTerms } from '../terms.js';
 
 /** Untrusted feed/page HTML → safe markup. Remote images and embeds are dropped (no third-party requests). */
 export function sanitize(input: string): string {
@@ -92,7 +92,12 @@ export function articlePage(app: App, a: ArticleDetail, flash?: string | null): 
   const older = a.classifications.filter((c) => c.id !== a.classificationId);
   const story = app.stories.forArticle(a.id);
   // The terms Mimir knows are marked wherever they turn up, so the reader can tap one.
-  const glossary = app.stories.glossary();
+  // The ordinary words are the ones the news writes everywhere: they are marked only in
+  // the story this article belongs to, and only where they are written as they are named.
+  const glossary = markingTerms(
+    app.stories.glossary(),
+    story ? app.stories.termsOf(story.storyId) : [],
+  );
   const content =
     a.contentSource === 'extracted' && a.contentText
       ? html`<div class="content">${paragraphs(a.contentText, glossary)}</div>`

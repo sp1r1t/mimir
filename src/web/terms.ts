@@ -3,7 +3,14 @@ import type { TermRecord } from '../stories/repository.js';
 import { escapeHtml, SafeHtml } from './html.js';
 
 /** A term of the glossary, as the pages need it. */
-export type MarkableTerm = Pick<TermRecord, 'key' | 'name' | 'description' | 'summary'>;
+export type MarkableTerm = Pick<TermRecord, 'key' | 'name' | 'description' | 'summary'> & {
+  /**
+   * The news writes this name in lower case most of the time: it is an ordinary word
+   * that one story gave a meaning to. It is marked only in the stories that use it that
+   * way, and only where the text writes it as it is named.
+   */
+  ordinary?: boolean;
+};
 
 interface Segment {
   text: string;
@@ -36,6 +43,25 @@ const COMMON = new Set([
 ]);
 
 /**
+ * The terms to mark in a story: the whole glossary, and the ordinary words of this story
+ * on top of it. An ordinary word is left out of the glossary's marks — "NEW" is Debian's
+ * incoming queue in one story and the opposite of old in all the others — but it is
+ * marked in the story that named it, and there only where it is written as it is named.
+ */
+export function markingTerms(glossary: MarkableTerm[], own: MarkableTerm[]): MarkableTerm[] {
+  const out = glossary.filter((t) => !t.ordinary);
+  const ordinary = new Map(glossary.filter((t) => t.ordinary).map((t) => [t.key, t]));
+  const have = new Set(out.map((t) => t.key));
+  for (const term of own) {
+    const known = ordinary.get(term.key);
+    if (!known || have.has(known.key)) continue;
+    have.add(known.key);
+    out.push(known);
+  }
+  return out;
+}
+
+/**
  * Cut a text into the pieces that are terms and the pieces that are not. A term is only
  * a term when it stands on its own: "OpenAI" in the text is the term, "OpenAI's" is the
  * term with a possessive, and "ReopenAI" is not.
@@ -47,21 +73,33 @@ function segment(text: string, terms: MarkableTerm[]): Segment[] {
   // The "u" flag is what makes "\p{L}" a letter class at all. Without it the class holds
   // the literal letters p, {, L, } and N, and the word boundary below lets "ice" match
   // inside "office" — which is how the term ICE ended up marked in the middle of a word.
+  // An ordinary word is matched as it is named as well: "NEW" is Debian's queue, and
+  // "new" is a word about something else.
+  const plain = usable.filter((t) => !t.ordinary);
   const buckets = [
-    { list: usable.filter((t) => t.name.length >= 3), flags: 'giu' },
-    { list: usable.filter((t) => t.name.length < 3), flags: 'gu' },
+    { list: plain.filter((t) => t.name.length >= 3), flags: 'giu', ordinary: false },
+    { list: plain.filter((t) => t.name.length < 3), flags: 'gu', ordinary: false },
+    { list: usable.filter((t) => t.ordinary), flags: 'gu', ordinary: true },
   ];
   const held = new Map<string, Segment>();
   let work = text;
   for (const bucket of buckets) {
     if (!bucket.list.length) continue;
-    const names = bucket.list.map((t) => t.name.trim()).filter(Boolean);
+    // The longest name first, so that "Microsoft Office" wins over "Office".
+    const names = bucket.list
+      .slice()
+      .sort(longestFirst)
+      .map((t) => t.name.trim())
+      .filter(Boolean);
     if (!names.length) continue;
     const pattern = new RegExp(
       `(?<![\\p{L}\\p{N}])(?:${names.map(escapeRegExp).join('|')})(?:['’]s)?(?![\\p{L}\\p{N}])`,
       bucket.flags,
     );
-    work = work.replace(pattern, (match) => {
+    work = work.replace(pattern, (match, offset: number, whole: string) => {
+      // An ordinary word that is the first half of a longer name is not the term: "New"
+      // in "New York" is the place, not the queue Debian files its packages in.
+      if (bucket.ordinary && /^\s+[\p{Lu}]/u.test(whole.slice(offset + match.length))) return match;
       // A possessive belongs to the term, but it is not part of its name.
       const possessive = match.match(/['’]s$/)?.[0] ?? '';
       const name = possessive ? match.slice(0, match.length - possessive.length) : match;

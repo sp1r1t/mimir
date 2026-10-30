@@ -26,7 +26,7 @@ import { fmtDate, pct, relative, timeEl } from '../format.js';
 import { html, raw, type SafeHtml } from '../html.js';
 import { layout } from '../layout.js';
 import { articleLinks, discoveredVia } from '../provenance.js';
-import { markTerms } from '../terms.js';
+import { markTerms, markingTerms, type MarkableTerm } from '../terms.js';
 import { feedbackControls, scoreCell, select, activeFilterCount } from './inbox.js';
 
 type Query = Record<string, string | undefined>;
@@ -416,12 +416,11 @@ function writeCounter(since: string | null, now: number, what: string): SafeHtml
   return html`<span class="write-counter" data-elapsed-since="${since}" data-elapsed-now="${new Date(now).toISOString()}" data-elapsed-what="${what}">${label}</span>`;
 }
 
-function summaryPanel(app: App, s: StoryDetail, now: number): SafeHtml {
+function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableTerm[]): SafeHtml {
   const provider = app.summaries;
   const configured = provider.isConfigured();
   const running = s.summaryState === 'running';
   const waiting = s.summaryState === 'pending';
-  const glossary = app.stories.glossary();
   const budget = app.storyPipeline.automaticSummaryBudget();
   const appLimited = waiting && (s.summaryError === 'Daily limit for automatic summaries reached'
     || s.summaryError?.startsWith('Mimir automatic-summary limit reached'));
@@ -573,11 +572,10 @@ function matchNote(m: StoryMember, storyId: number): string {
 
 const ROLE_LABEL: Record<StoryMember['role'], string> = { origin: 'First report', update: 'Update', coverage: 'Coverage' };
 
-function timelinePanel(app: App, s: StoryDetail, now: number): SafeHtml {
+function timelinePanel(app: App, s: StoryDetail, now: number, glossary: MarkableTerm[]): SafeHtml {
   // The newest entry comes first: the reader wants to see what happened last. The
   // number of an entry is its place in the story's publish order, and stays that way
   // when the reader flips the order.
-  const glossary = app.stories.glossary();
   const numbered = s.members.map((m, i) => ({ member: m, number: i + 1 })).reverse();
   return html`<section class="panel">
     <div class="timeline-head">
@@ -791,7 +789,10 @@ function termsPanel(s: StoryDetail): SafeHtml {
 
 export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOpen = false): SafeHtml {
   const now = Date.now();
-  const glossary = app.stories.glossary();
+  // The whole glossary is marked in the story, and the ordinary words of this story on
+  // top of it: those are words the news writes everywhere, and this story gave them a
+  // meaning of its own.
+  const glossary = markingTerms(app.stories.glossary(), s.terms);
   const body = html`
   <article class="detail story-detail" data-story-id="${s.id}" data-version="${app.stories.storyVersion(s.id)}">
     <header>
@@ -809,10 +810,10 @@ export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOp
       <div class="story-actions">${storyFeedback(s)}${storySave(s, true)}${mapButton(s, mapOpen)}</div>
     </header>
     ${mapPanel(app, s, mapOpen)}
-    ${summaryPanel(app, s, now)}
+    ${summaryPanel(app, s, now, glossary)}
     ${termsPanel(s)}
     ${assessmentPanel(s, now)}
-    ${timelinePanel(app, s, now)}
+    ${timelinePanel(app, s, now, glossary)}
     ${mergePanel(app, s)}
     ${s.events.length
       ? html`<section class="panel"><h3>Changes</h3><table><tbody>${s.events.map((e) => html`<tr><td>${fmtDate(e.createdAt)}</td><td>${eventText(e)}</td></tr>`)}</tbody></table></section>`

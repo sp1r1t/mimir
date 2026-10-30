@@ -12,7 +12,8 @@ import { Wikipedia, type Encyclopedia, type TermArticle } from '../src/terms/wik
 import { MockSummaryProvider } from '../src/summaries/mock.js';
 import type { MatchArticle, MatchCandidate, MatchJudgement, LevelAnswer, StoryMatcher } from '../src/stories/matcher.js';
 import { buildServer } from '../src/web/server.js';
-import { markTerms, type MarkableTerm } from '../src/web/terms.js';
+import { markTerms, markingTerms, type MarkableTerm } from '../src/web/terms.js';
+import { countWords, ordinaryNames } from '../src/terms/vocabulary.js';
 import { FeedServer, makeApp, waitFor, type TestApp } from './helpers.js';
 
 interface Item {
@@ -659,5 +660,99 @@ describe('a term that is only part of another word', () => {
   it('keeps a long name that the articles only write in an inflected form', () => {
     const kept = dropFragmentTerms([term('Bundestag')], ['die Beschlüsse des Bundestags']);
     expect(kept.map((t) => t.name)).toEqual(['Bundestag']);
+  });
+});
+
+describe('a name that is an ordinary word', () => {
+  const NEW: MarkableTerm = { key: 'new', name: 'NEW', description: 'The queue of new packages', summary: null, ordinary: true };
+  const OPENAI: MarkableTerm = { key: 'openai', name: 'OpenAI', description: 'An AI company', summary: null };
+
+  /** The terms that were marked in a text, with the text that was marked. */
+  function marked(text: string, terms: MarkableTerm[]): string[] {
+    const { document } = parseHTML(`<body>${markTerms(text, terms).value}</body>`);
+    return [...document.querySelectorAll('button.term')].map((b) => b.textContent ?? '');
+  }
+
+  it('leaves an ordinary word out of the marks of a story that did not name it', () => {
+    expect(markingTerms([NEW, OPENAI], []).map((t) => t.key)).toEqual(['openai']);
+  });
+
+  it('marks the ordinary word of the story that named it', () => {
+    expect(markingTerms([NEW, OPENAI], [NEW]).map((t) => t.key)).toEqual(['openai', 'new']);
+  });
+
+  it('marks an ordinary word only where it is written as it is named', () => {
+    const terms = markingTerms([NEW], [NEW]);
+    expect(marked('the NEW queue and a new release', terms)).toEqual(['NEW']);
+  });
+
+  it('does not mark an ordinary word that is the first half of a longer name', () => {
+    const terms = markingTerms([NEW], [NEW]);
+    expect(marked('the New York Times reported it', terms)).toEqual([]);
+  });
+
+  it('keeps a name the news writes in capitals marked everywhere', () => {
+    expect(marked('OpenAI and openai', markingTerms([OPENAI], []))).toEqual(['OpenAI', 'openai']);
+  });
+});
+
+describe('counting the ordinary words of the news', () => {
+  it('calls a name an ordinary word when the news writes it in lower case', () => {
+    const counts = new Map([['new', { total: 100, lower: 80 }]]);
+    expect([...ordinaryNames(counts, [{ key: 'new', name: 'NEW' }])]).toEqual(['new']);
+  });
+
+  it('keeps a name the news writes in capitals', () => {
+    const counts = new Map([['anthropic', { total: 100, lower: 2 }]]);
+    expect(ordinaryNames(counts, [{ key: 'anthropic', name: 'Anthropic' }]).size).toBe(0);
+  });
+
+  it('never calls a name of one or two letters an ordinary word', () => {
+    const counts = new Map([['pt', { total: 100, lower: 100 }]]);
+    expect(ordinaryNames(counts, [{ key: 'pt', name: 'PT' }]).size).toBe(0);
+  });
+
+  it('needs to see the name often enough', () => {
+    const counts = new Map([['dawn', { total: 3, lower: 3 }]]);
+    expect(ordinaryNames(counts, [{ key: 'dawn', name: 'Dawn' }]).size).toBe(0);
+  });
+
+  it('counts the headlines and the teasers, and leaves the code alone', async () => {
+    const t = makeApp();
+    try {
+      t.app.db
+        .prepare(
+          `INSERT INTO articles (title, summary_text, content_text, content_hash, discovered_at, ingested_at, updated_at)
+           VALUES (?, ?, ?, 'hash', '2024-01-01', '2024-01-01', '2024-01-01')`,
+        )
+        .run('The new queue', 'A new release and the NEW queue', 'return_tensors="pt"');
+      const counts = countWords(t.app.db);
+      expect(counts.get('new')).toEqual({ total: 3, lower: 2 });
+      expect(counts.get('pt')).toBeUndefined();
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it('marks the names the news writes in lower case', async () => {
+    const t = makeApp();
+    try {
+      const db = t.app.db;
+      db.prepare(
+        `INSERT INTO terms (term_key, name, kind, status, created_at, updated_at)
+         VALUES ('new', 'NEW', 'concept', 'explained', '2024-01-01', '2024-01-01')`,
+      ).run();
+      const insert = db.prepare(
+        `INSERT INTO articles (title, summary_text, content_hash, discovered_at, ingested_at, updated_at)
+         VALUES (?, ?, 'hash', '2024-01-01', '2024-01-01', '2024-01-01')`,
+      );
+      for (let i = 0; i < 12; i++) insert.run('A new release', 'a new version of the package');
+
+      const counted = t.app.stories.refreshOrdinaryTerms();
+      expect(counted).toEqual({ ordinary: 1, terms: 1 });
+      expect(t.app.stories.glossary()[0]!.ordinary).toBe(true);
+    } finally {
+      await t.cleanup();
+    }
   });
 });

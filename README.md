@@ -418,6 +418,17 @@ that citation, but the brief it came with is never lost. A brief written before 
 change carries no terms, and asking for the terms of such a story runs the separate
 name-reading pass instead, whose prompt is versioned as `terms/1`.
 
+**Words that are only words in one story.** A name the news writes in lower case most
+of the time is an ordinary word, not a name: "NEW" is Debian's queue of new packages in
+one story and the opposite of old in all the others, "Office" is Microsoft Office in one
+story and a room in all the others. Mimir counts the words of the news — the
+headlines, the teasers the feeds carry and the briefs — and a name it finds in lower
+case most of the time (at least ten times, and of at least three letters) is marked as
+an ordinary word. Such a name is marked only in the stories that named it, and only
+where the text writes it as it is named: "NEW" is a button in the story about Debian's
+packages, and the "new" of "a new release" is plain text everywhere else. The count is
+redone every ten minutes, as the news grows.
+
 **Where the explanation comes from.** Each term is looked up in Wikipedia first: the
 title the model gave ("Sandbox (software development)" for an ambiguous name), then the
 bare name, then a search whose hits are only accepted when their title carries the
@@ -721,7 +732,7 @@ src/jobs/             SQLite queue and bounded workers
 src/profile/          validated profile schema and version repository
 src/stories/          candidate retrieval, Jev story matcher, assessment, story jobs
 src/summaries/        SummaryProvider interface, MiniMax and mock providers, prompt and validation
-src/terms/            term prompt and validation, Wikipedia client, glossary markup
+src/terms/            term prompt and validation, Wikipedia client, glossary markup, word count
 src/repo/             article/source/feedback/statistics persistence
 src/web/              Fastify routes, server-rendered pages, metrics
 src/pipeline.ts       extraction/classification/recovery coordination
