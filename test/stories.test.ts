@@ -753,4 +753,36 @@ describe('stories', () => {
     expect(app.stories.item(low)!.unseen).toBe(true);
     expect(await get('/')).toContain('all caught up');
   });
+
+  it('folds every panel of a story away, and gives them all the same head', async () => {
+    const app = await setup({ matcher: new FakeMatcher(['volcano']) });
+    server = buildServer(app);
+    await server.ready();
+    await publish([{ guid: 'a', title: 'Volcano erupts near Grindavik', host: 'a.example.com' }]);
+    await idle();
+    const id = storyOf('a').id;
+
+    const page = await server.inject({ url: `/stories/${id}` });
+    const { document } = parseHTML(page.body);
+    // Every panel of a story is a panel that folds: the brief, the assessment, the
+    // timeline, the terms, the merge controls and the changes.
+    const panels = [...document.querySelectorAll('.story-detail > details.panel')];
+    expect(panels.map((p) => p.id)).toEqual([
+      'story-brief',
+      'story-assessment',
+      'story-timeline',
+      'story-terms',
+      'story-merge',
+    ]);
+    for (const panel of panels) {
+      // The head is the first thing in the panel, and it carries the title: that is
+      // the affordance the reader folds the panel with.
+      const head = panel.firstElementChild!;
+      expect(head.tagName).toBe('SUMMARY');
+      expect(head.querySelector('h3')!.textContent).toBeTruthy();
+    }
+    // The map card is not one of them: it opens from the button in the header.
+    const sections = [...document.querySelectorAll('.story-detail > section.panel')];
+    expect(sections.map((s) => s.className)).toEqual(['panel map-panel']);
+  });
 });

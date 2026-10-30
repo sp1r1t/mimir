@@ -278,19 +278,16 @@ ul.plain li { margin: .3rem 0; }
 .card.leaving { opacity: 0; transform: translateX(8px); transition: opacity .2s, transform .2s; }
 .mark-all { margin: 0 0 .5rem; }
 
-/* The head of a card: the title, and the control that acts on that card. */
-.panel-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
-.panel-head h3 { margin: 0; }
-
 /* The arrow that rewrites the brief. It belongs to the brief, so it sits in the head of
-   the brief card. It is a bare glyph, like the check that marks a story seen. */
-.rewrite-form { margin: 0; }
-.rewrite-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0;
-  border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 1.15rem; line-height: 1; }
+   the brief card, on the headline itself. It is a bare glyph, like the check that marks
+   a story seen, and it is a comfortable size to press with a thumb. */
+.rewrite-form { margin: 0; display: inline-flex; vertical-align: middle; }
+.rewrite-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0;
+  border: 0; border-radius: 0; background: transparent; color: var(--muted); line-height: 1; }
+.rewrite-icon { font-size: 1.7rem; }
 .rewrite-btn:hover { background: transparent; color: var(--accent-ink); filter: none; }
 .rewrite-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
 .rewrite-btn.stale { color: var(--accent); }
-@media (max-width: 720px) { .rewrite-btn { width: 44px; height: 44px; } }
 @media (max-width: 720px) { .seen-btn { width: 44px; height: 44px; } }
 
 /* the star that keeps a story with the reader */
@@ -367,13 +364,17 @@ body.map-open { overflow: hidden; }
 .term-card-name { font-weight: 700; }
 .term-card-desc { color: var(--text-2); }
 .term-card-source { font-size: .85rem; }
-.terms-panel > summary { font-size: 1.05rem; }
-/* The heads of the panels that fold away: the title, and what the panel holds. */
-.summary-panel > summary, .timeline-panel > summary { display: flex; align-items: baseline; gap: .6rem; }
-.summary-panel > summary h3, .timeline-panel > summary h3 { margin: 0; font-size: 1.05rem; }
+/* The head of a panel that folds away: the title, what the panel holds, and the arrow
+   that folds it. The title is a heading inside the summary, so the panel keeps its
+   name, and it stands on the same line as the rest of the head. A summary that is
+   given a display of its own loses the arrow the browser draws, so the head stays a
+   plain list item and only its contents are laid out. */
+.panel > summary { cursor: pointer; }
+.panel > summary h3 { display: inline; margin: 0; }
+.panel > summary .rewrite-form { float: right; margin: -.4rem -.3rem -.4rem .5rem; }
 /* The tools of a folded panel stand at the top of its body: the button that flips the
-   order of the timeline, and the arrow that rewrites the brief. */
-.timeline-tools, .brief-tools { display: flex; justify-content: flex-end; gap: .5rem; margin: .5rem 0 .25rem; }
+   order of the timeline. */
+.timeline-tools { display: flex; justify-content: flex-end; gap: .5rem; margin: .5rem 0 .25rem; }
 .timeline-tools .timeline-order { margin: 0; }
 .terms-panel .term-list { list-style: none; margin: .5rem 0 .25rem; padding: 0; display: flex; flex-direction: column; }
 .terms-panel .term-entry, .glossary-detail .term-entry { display: flex; flex-direction: column; gap: .15rem; padding: .55rem 0; border-top: 1px solid var(--border); }

@@ -150,9 +150,14 @@ function rewriteButton(s: StoryDetail): SafeHtml | null {
   </form>`;
 }
 
-/** The head of a card: its title, and the control that acts on that card. */
-function panelHead(title: string, action: SafeHtml | null): SafeHtml {
-  return html`<div class="panel-head"><h3>${title}</h3>${action}</div>`;
+/**
+ * The head of a panel that folds away: its title, what it holds, and the arrow the
+ * browser draws, which is the same for every panel of a story. The title is a heading
+ * inside the summary, so the panel keeps its name, and everything in the head stands
+ * on one line.
+ */
+function panelSummary(title: string, note?: SafeHtml | string | null): SafeHtml {
+  return html`<summary><h3>${title}</h3>${note ? html` ${note}` : null}</summary>`;
 }
 
 const SUMMARY_BADGE: Record<SummaryState, [string, string] | null> = {
@@ -453,12 +458,12 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
     ? html` <span class="badge ${briefBadge[0]}" title="${s.summaryError ?? ''}">${briefBadge[1]}</span>`
     : null;
   if (!s.summary) {
-    return html`<section class="panel">
-      ${panelHead('Story Intelligence Brief', null)}
+    return html`<details class="panel summary-panel" id="story-brief" open>
+      ${panelSummary('Story Intelligence Brief', summaryBadge)}
       ${status}
       ${configured ? null : html`<p class="muted">${provider.configurationHint()}</p>`}
       ${action}
-    </section>`;
+    </details>`;
   }
   const sum = s.summary;
   const index = timelineIndex(s);
@@ -489,8 +494,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
     const brief = sum.content;
     const newTitle = previousRevision ? `What's new since the brief of ${fmtDate(previousRevision.createdAt)}` : SECTION_TITLE.new_since;
     return html`<details class="panel summary-panel" id="story-brief" open>
-      <summary><h3>Story Intelligence Brief</h3>${summaryBadge}</summary>
-      <div class="panel-head brief-tools">${rewriteButton(s)}</div>
+      <summary><h3>Story Intelligence Brief</h3> ${summaryBadge}${rewriteButton(s)}</summary>
       ${status}
       ${written}
       <p class="brief-gist">${brief.gist.map((c, i) => html`${i ? ' ' : ''}${markTerms(c.text, glossary)} ${cite(c.sources, index)}`)}</p>
@@ -509,8 +513,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
   // at the same numbered timeline.
   const legacy = sum.content as LegacySummaryContent;
   return html`<details class="panel summary-panel" id="story-brief" open>
-    <summary><h3>Story Intelligence Brief</h3>${summaryBadge}</summary>
-    <div class="panel-head brief-tools">${rewriteButton(s)}</div>
+    <summary><h3>Story Intelligence Brief</h3> ${summaryBadge}${rewriteButton(s)}</summary>
     ${status}
     ${written}
     ${LEGACY_CLAIM_SECTIONS.map((k) => claims(LEGACY_SECTION_TITLE[k], legacy[k]))}
@@ -540,8 +543,8 @@ function assessmentPanel(s: StoryDetail, now: number): SafeHtml {
   const ev = current?.evidence;
   const from = (e: { articleId: number } | null | undefined) => (e ? html`from <a href="#a-${e.articleId}">article ${e.articleId}</a>` : null);
   const rec = s.recencyHalfLifeHours != null ? recency(s.latestDevelopmentAt, now, s.recencyHalfLifeHours) : null;
-  return html`<section class="panel">
-    <h3>Assessment</h3>
+  return html`<details class="panel assessment-panel" id="story-assessment">
+    ${panelSummary('Assessment', html`<span class="muted small">${plural(s.articleCount, 'article')}</span>`)}
     <div class="score-grid">
       ${bigScore('Priority', s.priority, current ? `${current.formula}, profile v${current.profileVersion}` : 'awaiting classification')}
       ${bigScore('Personal relevance', s.personalRelevance, from(ev?.personalRelevance), 'Strongest substantive report; promotion and exclusions discount an article')}
@@ -564,7 +567,7 @@ function assessmentPanel(s: StoryDetail, now: number): SafeHtml {
         </details>`
       : null}
     <form method="post" action="/stories/${s.id}/reassess" class="inline"><button type="submit" class="secondary">Recalculate</button></form>
-  </section>`;
+  </details>`;
 }
 
 function matchNote(m: StoryMember, storyId: number): string {
@@ -588,7 +591,7 @@ function timelinePanel(app: App, s: StoryDetail, now: number, glossary: Markable
   // The timeline is folded away by default: the story is what the reader came for, and
   // the entries are a long list to dig into.
   return html`<details class="panel timeline-panel" id="story-timeline">
-    <summary><h3>Timeline</h3><span class="muted small">${plural(s.members.length, 'article')}</span></summary>
+    ${panelSummary('Timeline', html`<span class="muted small">${plural(s.members.length, 'article')}</span>`)}
     <div class="timeline-tools">
       <button type="button" class="timeline-order" data-timeline-order>Oldest first</button>
     </div>
@@ -623,8 +626,8 @@ function timelinePanel(app: App, s: StoryDetail, now: number, glossary: Markable
 
 function mergePanel(app: App, s: StoryDetail): SafeHtml {
   const similar = app.stories.similarStories(s.id);
-  return html`<section class="panel">
-    <h3>Merge into another story</h3>
+  return html`<details class="panel merge-panel" id="story-merge">
+    ${panelSummary('Merge into another story', similar.length ? html`<span class="muted small">${plural(similar.length, 'candidate')}</span>` : null)}
     <form method="post" action="/stories/${s.id}/merge" class="merge-form"
       data-confirm="Merge this story into the selected one? Its ${plural(s.articleCount, 'article')} move there, this story closes, and the target's summary becomes outdated.">
       ${similar.length
@@ -636,7 +639,7 @@ function mergePanel(app: App, s: StoryDetail): SafeHtml {
         <button type="submit" class="secondary">Merge</button>
       </div>
     </form>
-  </section>`;
+  </details>`;
 }
 
 const PLACES_BADGE: Record<PlacesState, [string, string] | null> = {
@@ -778,7 +781,7 @@ function termsPanel(s: StoryDetail): SafeHtml {
     <button type="submit" class="secondary" ${waiting ? html`disabled` : null}>${s.terms.length ? 'Explain again' : 'Explain the terms'}</button>
   </form>`;
   return html`<details class="panel terms-panel" id="story-terms">
-    <summary><strong>Terms</strong>${s.terms.length ? html` <span class="muted small">${plural(s.terms.length, 'term')}</span>` : null}${badge ? html` <span class="badge ${badge[0]}">${badge[1]}</span>` : null}</summary>
+    ${panelSummary('Terms', html`${s.terms.length ? html`<span class="muted small">${plural(s.terms.length, 'term')}</span>` : null}${badge ? html` <span class="badge ${badge[0]}">${badge[1]}</span>` : null}`)}
     ${status}
     ${s.terms.length
       ? html`<ul class="term-list">${s.terms.map((t) => {
@@ -833,7 +836,10 @@ export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOp
     ${termsPanel(s)}
     ${mergePanel(app, s)}
     ${s.events.length
-      ? html`<section class="panel"><h3>Changes</h3><table><tbody>${s.events.map((e) => html`<tr><td>${fmtDate(e.createdAt)}</td><td>${eventText(e)}</td></tr>`)}</tbody></table></section>`
+      ? html`<details class="panel changes-panel" id="story-changes">
+          ${panelSummary('Changes', html`<span class="muted small">${plural(s.events.length, 'change')}</span>`)}
+          <table><tbody>${s.events.map((e) => html`<tr><td>${fmtDate(e.createdAt)}</td><td>${eventText(e)}</td></tr>`)}</tbody></table>
+        </details>`
       : null}
   </article>`;
   return layout(app, { title: s.headline, nav: 'stories', body, flash });

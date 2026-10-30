@@ -328,6 +328,15 @@ document.addEventListener('click', (ev) => {
   rememberTimelineOrder(order);
 });
 
+// A control in the head of a panel acts on the panel and does not fold it: the arrow
+// that rewrites the brief stands on the headline, and the reader pressed the arrow,
+// not the headline.
+document.addEventListener('click', (ev) => {
+  const control = ev.target.closest('summary button, summary a, summary input');
+  if (!control) return;
+  ev.stopPropagation();
+});
+
 
 function loadLeaflet() {
   if (window.leaflet) return Promise.resolve(window.leaflet);

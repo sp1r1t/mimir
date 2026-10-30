@@ -129,7 +129,7 @@ describe('the rewrite button in the brief card', () => {
     const form = document.querySelector('form.rewrite-form');
     if (!form) return null;
     const button = form.querySelector('button')!;
-    const head = form.closest('.panel-head');
+    const head = form.closest('summary');
     return {
       form,
       button,
@@ -138,6 +138,7 @@ describe('the rewrite button in the brief card', () => {
       label: button.getAttribute('aria-label'),
       stale: button.classList.contains('stale'),
       inBriefCard: !!head && !!head.closest('.summary-panel'),
+      inBriefHead: !!head,
       inStoryHeader: !!form.closest('header'),
       bordered: button.className.includes('bordered'),
     };
@@ -168,6 +169,17 @@ describe('the rewrite button in the brief card', () => {
     expect(button.inStoryHeader).toBe(false);
   });
 
+  it('stands on the headline of the brief, where the reader can see it', async () => {
+    const storyId = await setup();
+    t!.app.storyPipeline.requestSummary(storyId);
+    await waitFor(() => t!.app.stories.get(storyId)!.summary != null);
+
+    const button = rewrite((await server!.inject({ method: 'GET', url: `/stories/${storyId}` })).body)!;
+    // The head of the brief folds away; the arrow that rewrites it stands in that head,
+    // so it is reached before the brief text rather than after it.
+    expect(button.inBriefHead).toBe(true);
+  });
+
   it('is a plain glyph, without a circle around it', async () => {
     const storyId = await setup();
     t!.app.storyPipeline.requestSummary(storyId);
@@ -192,7 +204,7 @@ describe('the rewrite button in the brief card', () => {
     const storyId = await setup();
 
     const { document } = parseHTML((await server!.inject({ method: 'GET', url: `/stories/${storyId}` })).body);
-    const panel = [...document.querySelectorAll('section.panel')].find((p) => p.querySelector('h3')?.textContent === 'Story Intelligence Brief')!;
+    const panel = [...document.querySelectorAll('details.panel')].find((p) => p.querySelector('h3')?.textContent === 'Story Intelligence Brief')!;
     const labels = [...panel.querySelectorAll('button')].map((b) => b.textContent?.trim() ?? '');
     expect(labels.some((l) => /write the brief/i.test(l))).toBe(true);
     expect(document.querySelector('form.rewrite-form')).toBeNull();

@@ -143,13 +143,16 @@ a key.
   all pages, after a confirmation.
 - **Story details:** the Story Intelligence Brief with cited sources and claim status, the
   assessment with the articles behind each score, and a combined article timeline.
-  The brief says when it was written, and a rewritten brief leads with what is new since
-  the one before it. A brief that exists is rewritten from the bare arrow (↻) at the top
-  of the brief card, so the control is reached before the brief text rather than after
-  it; the arrow turns blue when the brief is outdated. The brief and the timeline both
-  fold away: the brief stands open, because it is the story itself, and the timeline is
-  folded, because it is a long list. A reader who folds the brief keeps it folded, and
-  a reader who opens the timeline keeps it open, also after the page puts a fresh story
+  Every panel of a story folds away, and they all fold the same way: the head of the
+  panel carries its title, what it holds, and the arrow that folds it. The brief says
+  when it was written, and a rewritten brief leads with what is new since
+  the one before it. A brief that exists is rewritten from the bare arrow (↻) on the
+  headline of the brief panel, so the control is reached before the brief text rather
+  than after it; the arrow turns blue when the brief is outdated, and pressing it
+  rewrites the brief without folding the panel. The brief stands open, because it is
+  the story itself; the assessment, the timeline, the terms, the merge controls and
+  the changes are folded. A reader who folds the brief keeps it folded, and a reader
+  who opens the timeline keeps it open, also after the page puts a fresh story
   in place of the old one. The timeline starts at the most recent entry;
   **Oldest first** / **Newest first** flips it, and the reader's choice is remembered
   for the next story.
@@ -162,7 +165,7 @@ a key.
   saves that one article; the star in the story header and on a story card saves the
   whole story. Story dates and article-management controls are collapsed by
   default. Expand **Manage articles** to move selected reports into a new story; merge
-  controls and brief generation remain on the story page.
+  controls and brief generation remain on the story page, in panels of their own.
 - **Saved stories:** the star on a story card or in the story header keeps the story
   with you, the way a Save pill keeps an article. The **Saved stories** tab on the story
   list shows the stories you kept (the **Saved** in the navigation holds the saved
@@ -531,7 +534,8 @@ layer having to know which of them it was.
 **What the page does.** On a change, the page fetches the story page again and puts the
 new story in place of the old one: the brief, the places, the map and the timeline all
 come back in the new version. The reader's timeline order and the open map are kept,
-and the map is drawn again with the new places. The two buttons on the page — **Write
+the map is drawn again with the new places, and every panel the reader folded or opened
+keeps the state it had. The two buttons on the page — **Write
 the brief** and **Find places** — post in the background and let the page update
 itself when the answer is ready.
 
