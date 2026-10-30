@@ -127,15 +127,21 @@ a key.
   (new or developing), category, relevance, significance, publisher count, brief state
   and seen state.
 - **Story cards:** the title, then one scrolling line of **publishers**, then the lead
-  text and one scrolling line of **tags**. Publishers are site hosts: the highlighted
+  text and one scrolling line of **tags**. The preview uses the latest brief’s gist
+  when available (including older executive summaries), falling back to the first
+  article’s teaser until a brief exists. Previews keep their compact 280-character
+  limit. Publishers are site hosts: the highlighted
   first chip reported the story first, the rest follow by most recent coverage, and
   `×3` marks several articles from one publisher. A chip opens that publisher's article
   in the story's timeline. Tags start with status badges (new development, new, developing,
   brief state), then topics ordered by match probability times the topic's priority in
-  your interest profile; core and high-priority topics are filled, normal and low ones
-  are outlined. The check in the top-right corner marks the story seen, and the star
-  next to the first report keeps the story with you.
-- **Seen:** the corner check on a story card or story page checks it off. In an unseen list
+  your interest profile; topics are quiet text links, with core topics in the accent
+  colour and high-priority topics in stronger text. Publishers also use text links,
+  with the first reporter emphasized. The four scores share one compact footer,
+  with only the priority meter accented. The line below the headline has **First reported** on the left, with
+  the save star and the seen check grouped on the right. The headline uses the full card width.
+- **Seen:** the check beside the save star on a story card, or the labelled seen
+  button beside Save below the story-page headline, checks it off. In an unseen list
   it leaves the list and the counts update; the **Seen** tab shows checked-off stories and
   lets you undo. A story comes back as unseen, labelled **New development**, when it gets
   a meaningful update; further coverage of the same facts does not bring it back.
@@ -160,7 +166,7 @@ a key.
   brief's citations refer to. Each timeline entry also shows its role (first report,
   update or additional coverage), discovery feed, original and available discussion
   links, article scores and a Save pill. Relevant / Not relevant controls in the story
-  header apply to the whole story; hold an icon to see its meaning without applying it.
+  header use thumbs-up/thumbs-down icons with visible labels and apply to the whole story; hold an icon to see its meaning without applying it.
   Hover and keyboard focus also show explanations. The Save pill in a timeline entry
   saves that one article; the star in the story header and on a story card saves the
   whole story. Story dates and article-management controls are collapsed by

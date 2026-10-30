@@ -98,17 +98,21 @@ way checking off a story takes it out of the unseen list.
 **What it means for later work.** Kept things are gold, everywhere. A saved filter, a
 saved list and a saved count are one feature, not three.
 
-### D4 — The check in the corner marks a story seen
+### D4 — The check marks a story seen
 
-**What.** A check in the top-right corner of a story card and of the story page marks
-the story seen. It is a bare glyph, no border, no background.
+**What.** On a story card, the line below the headline has First reported on the
+left and the save star followed by the seen check grouped on the right. This leaves the full width for the headline
+on a phone. The story page uses one toolbar below the publishers: Relevant, Not
+relevant, Map, Save, and Seen. Five equal columns keep every control on one row,
+with consistent monochrome icons above visible labels and no individual button
+borders. Save and Seen stay on the right; only Seen uses a check mark.
 
 **Why.** "Seen" is a small, frequent, reversible act. It should not cost a line of
 layout, and it should not be mistaken for a decision about the story. A story that
 develops after being seen comes back, labelled "New development".
 
-**What it means for later work.** Small state changes live in the corner of the thing
-they change, as a bare glyph, with the state carried by the glyph itself.
+**What it means for later work.** Frequent story controls belong together below the
+card headline, with the state carried by the glyph itself.
 
 ### D5 — A term is a button
 
@@ -159,6 +163,20 @@ whole glossary, not for one story, because the glossary is shared.
 end. Unicode letter classes need the `u` flag to be letter classes at all: without it
 `\p{L}` is the literal letters p, {, L, } and N, and "ice" is a word inside "office".
 
+### D8 — Story cards put reading before scoring
+
+**What.** Story cards use one full-width column, with the headline, dates and controls,
+publishers, brief preview, and topics above a compact four-column score footer.
+Publishers and topics are text links rather than separate bordered pills. The first
+publisher is emphasized; core and high-priority topics keep their visual emphasis.
+Status badges retain their state colours. Only the priority meter uses the accent;
+the other meters are muted. Reading text and headline sizes stay the same.
+
+**Why.** A card should let the reader understand the story before inspecting its
+assessment. Shared alignment, fewer boxes, and quiet metadata preserve an overview
+on a phone. Long words and URLs wrap without widening the page. Save and Seen stay
+together on the right below the headline, with comfortable touch targets.
+
 ---
 
 ## The visual language
@@ -205,8 +223,8 @@ while you are reading it is an interface that has been interrupted.
 reserved for it, so it never lies on top of the text. A floating control that hides the
 thing it is about is a control that is in the wrong place.
 
-**The corner of the page is reserved.** The top-right corner of a story card holds the
-seen check. Nothing else is put there.
+**The headline gets the full width.** Story-card controls live below the headline.
+The story detail page also keeps its controls below the headline.
 
 **Long presses explain.** An icon button applies its action on a short tap; holding it
 shows what it does. The action is never behind a hidden gesture.

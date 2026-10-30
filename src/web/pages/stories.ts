@@ -87,27 +87,30 @@ export function relevantNewCount(app: App): number {
   return app.stories.list({ ...parseStoryFilters(RELEVANT_NEW), pageSize: 1 }).total;
 }
 
-/** A check mark pinned to the top-right corner of its card or header. */
-function seenButton(s: Pick<StoryListItem, 'id' | 'unseen'>): SafeHtml {
+/** Seen control: compact on cards, labelled in the story action row. */
+function seenButton(s: Pick<StoryListItem, 'id' | 'unseen'>, labelled = false): SafeHtml {
   const seen = !s.unseen;
-  return html`<form class="seen-form seen-corner" method="post" action="/stories/${s.id}/seen" data-story="${s.id}">
+  return html`<form class="seen-form ${labelled ? 'labelled' : ''}" method="post" action="/stories/${s.id}/seen" data-story="${s.id}">
     <button type="submit" name="state" value="${seen ? 'unseen' : 'seen'}" class="seen-btn ${seen ? 'on' : ''}" aria-pressed="${seen ? 'true' : 'false'}"
       title="${seen ? 'Seen. Click to mark it as unseen.' : 'Mark as seen. It comes back as new if the story develops.'}">
-      <span class="seen-icon" aria-hidden="true">&#10003;</span><span class="seen-label sr-only">${seen ? 'Seen' : 'Mark seen'}</span>
+      <span class="seen-icon" aria-hidden="true">&#10003;</span><span class="seen-label ${labelled ? '' : 'sr-only'}">${seen ? 'Seen' : 'Mark seen'}</span>
     </button>
   </form>`;
 }
 
 function storyFeedback(s: StoryDetail): SafeHtml {
-  const button = (type: 'relevant' | 'not_relevant', icon: string, label: string) => {
+  const button = (type: 'relevant' | 'not_relevant', label: string) => {
     const active = s.relevanceLabel === type;
     const help = `Mark this story as ${label.toLowerCase()} to you. Tap again to clear.`;
+    const icon = type === 'relevant'
+      ? html`<path d="M7 10v12M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 8A2 2 0 0 1 17.5 22H3a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.8a2 2 0 0 0 1.7-.9L13 1a3.1 3.1 0 0 1 2 4.9Z"/>`
+      : html`<path d="M17 14V2M9 18.1 10 14H4.2a2 2 0 0 1-1.9-2.6l2.3-8A2 2 0 0 1 6.5 2H21a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.8a2 2 0 0 0-1.7.9L11 23a3.1 3.1 0 0 1-2-4.9Z"/>`;
     return html`<button type="submit" name="type" value="${active ? 'clear_relevance' : type}" class="fb ${active ? 'on' : ''}"
       data-type="${type}" data-clear="clear_relevance" data-help="${help}" title="${help}" aria-label="${label}" aria-pressed="${active ? 'true' : 'false'}">
-      <span class="fb-icon" aria-hidden="true">${icon}</span><span class="fb-label">${label}</span></button>`;
+      <svg class="fb-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg><span class="fb-label">${label}</span></button>`;
   };
   return html`<form class="feedback feedback-compact story-feedback" method="post" action="/stories/${s.id}/feedback" data-story="${s.id}" aria-label="Story relevance">
-    ${button('relevant', '✓', 'Relevant')}${button('not_relevant', '✗', 'Not relevant')}
+    ${button('relevant', 'Relevant')}${button('not_relevant', 'Not relevant')}
   </form>`;
 }
 
@@ -226,18 +229,20 @@ function publisherRow(s: StoryListItem, now: number): SafeHtml | null {
 }
 
 function storyCard(s: StoryListItem, now: number, topics: TopicImportance): SafeHtml {
+  const preview = s.summaryGist ?? s.leadSummary;
   return html`<article class="card story ${s.unseen ? 'unseen' : 'seen'}" data-story="${s.id}">
-    ${seenButton(s)}
     <div class="card-main">
       <h2><a href="/stories/${s.id}">${s.summaryHeadline ?? s.headline}</a></h2>
-      <div class="meta">
-        ${storySave(s)}
-        <span title="Earliest publication in this story">First reported ${timeEl(s.firstPublishedAt, now)}</span>
-        ${s.developmentCount > 1 ? html`<span title="Publication of the latest meaningful update">Updated ${timeEl(s.latestDevelopmentAt, now)}</span>` : null}
-        ${s.latestPublishedAt !== s.latestDevelopmentAt ? html`<span title="Most recent article in this story">Latest coverage ${timeEl(s.latestPublishedAt, now)}</span>` : null}
+      <div class="story-card-meta">
+        <div class="meta">
+          <span title="Earliest publication in this story">First reported ${timeEl(s.firstPublishedAt, now)}</span>
+          ${s.developmentCount > 1 ? html`<span title="Publication of the latest meaningful update">Updated ${timeEl(s.latestDevelopmentAt, now)}</span>` : null}
+          ${s.latestPublishedAt !== s.latestDevelopmentAt ? html`<span title="Most recent article in this story">Latest coverage ${timeEl(s.latestPublishedAt, now)}</span>` : null}
+        </div>
+        <div class="story-card-controls">${storySave(s)}${seenButton(s)}</div>
       </div>
       ${publisherRow(s, now)}
-      ${s.leadSummary ? html`<p class="summary">${s.leadSummary.slice(0, 280)}${s.leadSummary.length > 280 ? '...' : ''}</p>` : null}
+      ${preview ? html`<p class="summary">${preview.slice(0, 280)}${preview.length > 280 ? '...' : ''}</p>` : null}
       ${tagRow(s, now, topics)}
     </div>
     <div class="scores">
@@ -665,7 +670,7 @@ function mapButton(s: StoryDetail, open: boolean): SafeHtml {
   const n = s.places.length;
   return html`<a class="map-toggle" href="/stories/${s.id}${open ? '' : '?map=1'}" data-map-toggle
       aria-expanded="${open ? 'true' : 'false'}" aria-controls="story-map">
-    <span class="map-pin" aria-hidden="true"></span>${n ? `Map · ${n}` : 'Map'}</a>`;
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18-6 3V6l6-3 6 3 6-3v15l-6 3-6-3ZM9 3v15M15 6v15"/></svg><span class="map-label">${n ? `Map · ${n}` : 'Map'}</span></a>`;
 }
 
 /** The map card: the map itself, and the places it shows as a list. */
@@ -817,7 +822,6 @@ export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOp
   const body = html`
   <article class="detail story-detail" data-story-id="${s.id}" data-version="${app.stories.storyVersion(s.id)}">
     <header>
-      ${seenButton(s)}
       <h1>${markTerms(s.summary?.content.headline ?? s.headline, glossary)}</h1>
       ${s.summary && s.summary.content.headline !== s.headline ? html`<p class="muted">First report: ${s.headline}</p>` : null}
       <div class="meta">
@@ -828,7 +832,10 @@ export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOp
       </div>
       <div class="tags">${storyBadges(s, now)}</div>
       ${publisherRow(s, now)}
-      <div class="story-actions">${storyFeedback(s)}${storySave(s, true)}${mapButton(s, mapOpen)}</div>
+      <div class="story-actions">
+        ${storyFeedback(s)}${mapButton(s, mapOpen)}
+        <div class="story-card-controls">${storySave(s, true)}${seenButton(s, true)}</div>
+      </div>
     </header>
     ${mapPanel(app, s, mapOpen)}
     ${summaryPanel(app, s, now, glossary)}

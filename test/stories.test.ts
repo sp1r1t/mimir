@@ -158,6 +158,43 @@ describe('stories', () => {
     return app.stories.get(app.stories.storyIdOf(id)!)!;
   };
 
+  it.each(['brief', 'legacy'])('uses the %s gist for card previews, falling back to the article teaser', async (format) => {
+    const app = await setup({ summaries: new MockSummaryProvider() });
+    const teaser = 'Original publisher teaser.';
+    await publish([{ guid: 'preview', title: 'Volcano erupts near Vik', host: 'ruv.example.is', description: teaser }]);
+    await idle();
+    const id = storyOf('preview').id;
+    server = buildServer(app);
+    const preview = async () => {
+      const response = await server!.inject({ url: '/?view=all' });
+      expect(response.statusCode).toBe(200);
+      return parseHTML(response.body).document.querySelector(`[data-story="${id}"] .summary`)!;
+    };
+    expect((await preview()).textContent).toBe(teaser);
+    expect(app.stories.item(id)!.summaryGist).toBeNull();
+
+    app.storyPipeline.requestSummary(id);
+    await waitFor(() => app.stories.item(id)!.summaryState === 'ready');
+    const summary = app.stories.get(id)!.summary!;
+    const text = 'The eruption affects <nearby towns> & roads.';
+    const second = 'Authorities are monitoring the situation. '.repeat(8).trim();
+    const claims = [text, second].map((text) => ({ text, status: 'reported', sources: [storyOf('preview').leadArticleId!] }));
+    const content = format === 'brief'
+      ? { ...summary.content, gist: claims }
+      : { headline: summary.content.headline, what_happened: claims, why_it_matters: [], key_facts: [], developments: [], implications: [], uncertainties: [] };
+    app.db.prepare('UPDATE story_summaries SET content = ? WHERE id = ?').run(JSON.stringify(content), summary.id);
+    const gist = claims.map((c) => c.text).join(' ');
+    expect(app.stories.list({}).items[0]!.summaryGist).toBe(gist);
+    const cardPreview = await preview();
+    expect(cardPreview.textContent).toBe(`${gist.slice(0, 280)}...`);
+    expect(cardPreview.children).toHaveLength(0);
+    expect(cardPreview.textContent).not.toContain(teaser);
+
+    // A brief remains useful while an update is waiting to be summarized.
+    app.db.prepare('UPDATE stories SET summary_stale = 1 WHERE id = ?').run(id);
+    expect((await preview()).textContent).toBe(`${gist.slice(0, 280)}...`);
+  });
+
   it('groups reports of the same event, counts publishers, and keeps unrelated articles apart', async () => {
     const matcher = new FakeMatcher(['volcano']);
     const app = await setup({ matcher });

@@ -143,6 +143,8 @@ export interface StoryListItem {
   leadArticleId: number | null;
   leadSummary: string | null;
   summaryHeadline: string | null;
+  /** Gist of the latest brief, or what happened in a legacy summary. */
+  summaryGist: string | null;
   articleCount: number;
   publisherCount: number;
   developmentCount: number;
@@ -271,6 +273,8 @@ const UNSEEN_SQL = `(s.seen_at IS NULL OR COALESCE(s.latest_development_at, '') 
 
 const STORY_COLUMNS = `s.id, s.status, s.merged_into_id AS mergedIntoId, s.headline, s.lead_article_id AS leadArticleId,
   la.summary_text AS leadSummary, json_extract(ss.content, '$.headline') AS summaryHeadline,
+  (SELECT NULLIF(group_concat(json_extract(value, '$.text'), ' '), '')
+    FROM json_each(COALESCE(json_extract(ss.content, '$.gist'), json_extract(ss.content, '$.what_happened'), '[]'))) AS summaryGist,
   s.article_count AS articleCount, s.publisher_count AS publisherCount, s.development_count AS developmentCount,
   s.first_published_at AS firstPublishedAt, s.latest_published_at AS latestPublishedAt, s.latest_development_at AS latestDevelopmentAt,
   s.personal_relevance AS personalRelevance, s.significance, s.urgency, s.coverage,
