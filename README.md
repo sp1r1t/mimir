@@ -862,3 +862,7 @@ Profile updates accept `{ "definition": { ... }, "changeNote": "...", "author": 
 web form. Article query parameters match the inbox URL (`q`, `source`, `category`,
 `min`, `max`, `date`, `from`, `to`, `status`, `saved`, `feedback`, `type`, `sort`,
 `page`, `size`); relevance bounds are 0–100.
+
+## License
+
+[MIT](LICENSE)
