@@ -26,6 +26,9 @@ export function layout(app: App, opts: { title: string; nav: NavKey; body: SafeH
   const counts = app.stats.overview();
   const articleNav = opts.nav === 'inbox' || opts.nav === 'saved' || opts.nav === 'review';
   const moreActive = ['sources', 'profile', 'stats', 'review'].includes(opts.nav);
+  // The kind of list this page shows, and the digest it was drawn from: the page watches it.
+  const liveKind = opts.nav === 'stories' ? 'stories' : articleNav ? 'articles' : opts.nav === 'glossary' ? 'terms' : null;
+  const liveVersion = liveKind ? app.stories.liveVersions()[liveKind] : '';
   const link = (key: NavKey, href: string, label: string) =>
     html`<a href="${href}" class="${opts.nav === key ? 'active' : ''}" ${opts.nav === key ? html`aria-current="page"` : null}>${label}</a>`;
   const banner =
@@ -45,11 +48,11 @@ export function layout(app: App, opts: { title: string; nav: NavKey; body: SafeH
 <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
 <title>${opts.title} · Mimir</title>
-<link rel="stylesheet" href="/static/app.css?v=reader-system-13">
+<link rel="stylesheet" href="/static/app.css?v=reader-system-14">
 <script>try{var f=+localStorage.getItem('mimir-font-size');if(f>=12&&f<=22)document.documentElement.style.fontSize=f+'px'}catch(e){}</script>
-<script src="/static/app.js?v=reader-system-13" defer></script>
+<script src="/static/app.js?v=reader-system-14" defer></script>
 </head>
-<body class="view-${opts.nav}">
+<body class="view-${opts.nav}" ${liveKind ? html`data-live="${liveKind}" data-live-version="${liveVersion}"` : null}>
 <a class="skip-link" href="#main-content">Skip to content</a>
 <header class="top">
   <div class="top-inner">

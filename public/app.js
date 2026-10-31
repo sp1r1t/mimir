@@ -22,6 +22,7 @@ document.addEventListener('submit', async (ev) => {
       body: JSON.stringify({ type: button.value }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    markOwnChange();
     const { state } = await res.json();
     render(form, state);
     if (form.classList.contains('story-save')) syncSaved(form, state);
@@ -36,6 +37,11 @@ document.addEventListener('submit', async (ev) => {
   }
 });
 
+// The reader's own changes are already on screen: the live refresh must not redraw them.
+function markOwnChange() {
+  window.mimirQuietUntil = Date.now() + 2500;
+}
+
 // Story "seen" state. In a filtered list (unseen or seen only) a card that no longer matches leaves it.
 async function toggleSeen(form, button) {
   button.disabled = true;
@@ -46,6 +52,7 @@ async function toggleSeen(form, button) {
       body: JSON.stringify({ state: button.value }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    markOwnChange();
     const { unseen, relevantNew } = await res.json();
     const tabCount = document.querySelector('[data-qv-count="relevant"]');
     if (tabCount) tabCount.textContent = relevantNew;
@@ -166,7 +173,8 @@ let helpTooltip = null;
 let helpDismissTimer = null;
 
 // Keep native title hints as a fallback when JavaScript is unavailable.
-document.querySelectorAll('.feedback-compact .fb').forEach((b) => b.removeAttribute('title'));
+const stripFeedbackTitles = () => document.querySelectorAll('.feedback-compact .fb').forEach((b) => b.removeAttribute('title'));
+stripFeedbackTitles();
 
 function hideFeedbackHelp() {
   clearTimeout(helpDismissTimer);
@@ -901,8 +909,9 @@ document.addEventListener('keydown', (ev) => {
 });
 
 // Search the glossary locally, keeping explanations and source links together.
-const glossarySearch = document.querySelector('[data-glossary-search]');
-glossarySearch?.addEventListener('input', () => {
+document.addEventListener('input', (ev) => {
+  const glossarySearch = ev.target instanceof Element ? ev.target.closest('[data-glossary-search]') : null;
+  if (!glossarySearch) return;
   const query = glossarySearch.value.trim().toLocaleLowerCase();
   let matches = 0;
   document.querySelectorAll('.glossary-section').forEach((section) => {
@@ -1010,5 +1019,106 @@ glossarySearch?.addEventListener('input', () => {
   document.addEventListener('selectionchange', () => {
     clearTimeout(timer);
     timer = setTimeout(offer, 250);
+  });
+})();
+
+
+// ---- Live lists ----------------------------------------------------------------------
+// The pages that list stories, articles or glossary terms keep one event stream open.
+// The server says when one of those lists has changed; a page that shows that list asks
+// for itself again and puts the fresh content in place, where the reader left off.
+// (A story page watches its own story, above.)
+
+(function liveLists() {
+  const kind = document.body.dataset.live;
+  if (!kind || storyCard()) return;
+  let shown = document.body.dataset.liveVersion || '';
+  let latest = shown;
+  let source = null;
+  let busy = false;
+  let retry = null;
+
+  /** The reader is in the middle of something that a redraw would spoil. */
+  function reading() {
+    const a = document.activeElement;
+    if (a && a !== document.body && a.closest('main') && a.matches('input, textarea, select')) return true;
+    if (document.querySelector('.card.leaving, .term-card, .term-add')) return true;
+    const sel = getSelection();
+    return !!(sel && !sel.isCollapsed && document.querySelector('main')?.contains(sel.anchorNode));
+  }
+
+  async function refresh() {
+    if (busy || latest === shown) return;
+    if (document.hidden) return;
+    if (reading()) return void setTimeout(refresh, 1500);
+    busy = true;
+    const target = latest;
+    try {
+      const res = await fetch(`${location.pathname}${location.search}`, { headers: { Accept: 'text/html' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const page = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const fresh = page.querySelector('main');
+      const current = document.querySelector('main');
+      if (!fresh || !current) return;
+      if (reading()) return void setTimeout(refresh, 1500);
+      const y = window.scrollY;
+      const open = new Set([...current.querySelectorAll('details[id][open]')].map((d) => d.id));
+      current.replaceChildren(...fresh.childNodes);
+      for (const d of current.querySelectorAll('details[id]')) if (open.has(d.id)) d.setAttribute('open', '');
+      stripFeedbackTitles();
+      ensureElapsedTicker();
+      if (page.title) document.title = page.title;
+      // The page keeps the place the reader had in it.
+      if (Math.abs(window.scrollY - y) > 1) window.scrollTo({ top: y, behavior: 'instant' });
+      shown = target;
+      document.body.dataset.liveVersion = shown;
+    } catch {
+      setTimeout(refresh, 5000);
+    } finally {
+      busy = false;
+    }
+    if (latest !== shown) refresh();
+  }
+
+  function onVersions(versions) {
+    const v = versions[kind];
+    if (!v || v === latest) return;
+    latest = v;
+    // What the reader just did is already drawn: take the new state without redrawing.
+    if ((window.mimirQuietUntil ?? 0) > Date.now()) {
+      shown = latest;
+      document.body.dataset.liveVersion = shown;
+      return;
+    }
+    refresh();
+  }
+
+  function connect() {
+    if (source) source.close();
+    clearTimeout(retry);
+    source = new EventSource('/api/events');
+    source.addEventListener('change', (ev) => {
+      try {
+        onVersions(JSON.parse(ev.data));
+      } catch {
+        /* a broken message is ignored */
+      }
+    });
+    source.onerror = () => {
+      // The browser reconnects on its own; when it gives up, try again later.
+      if (source.readyState === EventSource.CLOSED) retry = setTimeout(connect, 5000);
+    };
+  }
+
+  connect();
+  // Back button (a page restored from the cache runs no code) and returning to the tab:
+  // reconnect, and the server tells the page at once what the lists look like now.
+  window.addEventListener('pageshow', (ev) => {
+    if (ev.persisted) connect();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (!source || source.readyState === EventSource.CLOSED) connect();
+    refresh();
   });
 })();

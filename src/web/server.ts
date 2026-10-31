@@ -181,6 +181,61 @@ export function buildServer(app: App): FastifyInstance {
       }
     }
     openStreams.clear();
+    liveStreams.clear();
+    if (liveTimer) clearInterval(liveTimer);
+    liveTimer = null;
+  });
+
+  // One stream for every list page: it says which kind of list changed, and the page
+  // that shows that kind asks for itself again. The versions are worked out once a
+  // second for all readers, not once per reader.
+  const liveStreams = new Set<ServerResponse>();
+  let liveVersions = app.stories.liveVersions();
+  let liveTimer: NodeJS.Timeout | null = null;
+  const liveWrite = (res: ServerResponse, text: string) => {
+    try {
+      res.write(text);
+    } catch {
+      liveStreams.delete(res);
+      openStreams.delete(res);
+    }
+  };
+  const liveTick = () => {
+    const now = app.stories.liveVersions();
+    if (JSON.stringify(now) === JSON.stringify(liveVersions)) return;
+    liveVersions = now;
+    for (const res of liveStreams) liveWrite(res, `event: change\ndata: ${JSON.stringify(now)}\n\n`);
+  };
+  server.get('/api/events', async (req, reply) => {
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    openStreams.add(res);
+    liveStreams.add(res);
+    if (!liveTimer) liveTimer = setInterval(liveTick, 1000);
+    const beat = setInterval(() => liveWrite(res, ': keep-alive\n\n'), 20_000);
+    const stop = () => {
+      clearInterval(beat);
+      liveStreams.delete(res);
+      openStreams.delete(res);
+      if (!liveStreams.size && liveTimer) {
+        clearInterval(liveTimer);
+        liveTimer = null;
+      }
+      if (!res.writableEnded) res.end();
+    };
+    res.on('error', stop);
+    req.raw.on('close', stop);
+    res.write('retry: 3000\n\n');
+    // A page that connects, or comes back from the back button, learns the state at once.
+    liveVersions = app.stories.liveVersions();
+    res.write(`event: change\ndata: ${JSON.stringify(liveVersions)}\n\n`);
+    return reply;
   });
 
   server.get('/api/stories/:id/events', async (req, reply) => {

@@ -753,6 +753,37 @@ export class StoryRepository {
     return [r.summaryId, r.summaryRequest, r.summaryStale, r.placesState, r.termsState, r.articles, r.brief, r.places, r.terms, r.assessment].join('|');
   }
 
+  /**
+   * A short digest for each kind of list the reader browses: the stories, the articles
+   * and the glossary. A page that holds one of them compares it with the digest it was
+   * drawn from, and so knows when it has gone stale without being told what changed.
+   */
+  liveVersions(): { stories: string; articles: string; terms: string } {
+    const join = (r: Record<string, unknown> | undefined) => Object.values(r ?? {}).join('|');
+    const stories = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n, MAX(updated_at) AS upd, MAX(summary_id) AS summary, MAX(assessment_id) AS assessment,
+                SUM(summary_stale) AS stale, SUM(summary_request <> 'idle') AS requested, MAX(summary_started_at) AS started,
+                COUNT(seen_at) AS seen, MAX(seen_at) AS seenAt, COUNT(saved_at) AS saved, MAX(saved_at) AS savedAt,
+                SUM(article_count) AS articles, SUM(places_state IN ('pending','running')) AS places,
+                SUM(terms_state IN ('pending','running')) AS terms, COUNT(relevance_label) AS labelled
+           FROM stories WHERE status = 'active'`,
+      )
+      .get() as Record<string, unknown>;
+    const articles = this.db
+      .prepare(
+        `SELECT (SELECT COUNT(*) FROM articles) AS n, COUNT(*) AS states, MAX(current_classification_id) AS cls,
+                SUM(classification_status = 'classified') AS classified, COUNT(saved_at) AS saved,
+                MAX(last_feedback_at) AS feedback, COUNT(first_viewed_at) AS viewed
+           FROM article_state`,
+      )
+      .get() as Record<string, unknown>;
+    const terms = this.db
+      .prepare(`SELECT COUNT(*) AS n, MAX(updated_at) AS upd, SUM(status = 'explained') AS explained FROM terms`)
+      .get() as Record<string, unknown>;
+    return { stories: join(stories), articles: join(articles), terms: join(terms) };
+  }
+
   // ---- Places ------------------------------------------------------------------------
 
   /** Where the place lookup stands, and what went wrong if something did. */
