@@ -24,7 +24,7 @@ import {
 import type { TermKind } from '../../terms/schema.js';
 import { fmtDate, pct, relative, timeEl } from '../format.js';
 import { html, raw, type SafeHtml } from '../html.js';
-import { layout } from '../layout.js';
+import { pageHeading, layout } from '../layout.js';
 import { articleLinks, discoveredVia } from '../provenance.js';
 import { markTerms, markingTerms, type MarkableTerm } from '../terms.js';
 import { feedbackControls, scoreCell, select, activeFilterCount } from './inbox.js';
@@ -328,6 +328,7 @@ export function storiesPage(app: App, query: Query, flash?: string | null): Safe
   const tab = (key: 'relevant' | 'all' | 'seen' | 'saved', href: string, label: string, count?: number) =>
     html`<a href="${href}" class="qv ${view === key ? 'active' : ''}" ${view === key ? html`aria-current="page"` : null}>${label}${count != null ? html` <span class="count" data-qv-count="${key}">${count}</span>` : null}</a>`;
   const body = html`
+    ${pageHeading('Stories', 'Your news, connected and explained.')}
     <nav class="quick-views" aria-label="Quick views">
       ${tab('relevant', '/', 'Relevant new', relevantNewCount(app))}
       ${tab('all', '/?view=all', 'All stories')}
@@ -338,6 +339,7 @@ export function storiesPage(app: App, query: Query, flash?: string | null): Safe
       <summary>Filters${activeFilterCount(query) ? html` <span class="muted">&middot; ${activeFilterCount(query)} active</span>` : null}</summary>
       ${filters}
     </details>
+    <div class="list-toolbar">
     <p class="result-count"><span data-total>${result.total}</span> <span data-total-noun>${result.total === 1 ? 'story' : 'stories'}</span>${counts.unassigned ? html` &middot; ${counts.unassigned} articles not yet grouped` : null}</p>
     ${f.seen === 'unseen' && result.total > 1
       ? html`<form method="post" action="/stories/seen-all" class="mark-all" data-confirm="Mark all ${result.total} stories matching these filters as seen?">
@@ -345,6 +347,7 @@ export function storiesPage(app: App, query: Query, flash?: string | null): Safe
           <button type="submit" class="secondary small">Mark all ${result.total} as seen</button>
         </form>`
       : null}
+    </div>
     <div class="list" data-seen-filter="${f.seen ?? ''}" data-saved-filter="${f.saved ?? ''}">
       ${result.items.length
         ? result.items.map((s) => storyCard(s, now, topics))
@@ -464,7 +467,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
     ? html` <span class="badge ${briefBadge[0]}" title="${s.summaryError ?? ''}">${briefBadge[1]}</span>`
     : null;
   if (!s.summary) {
-    return html`<details class="panel summary-panel" id="story-brief" open>
+    return html`<details class="panel summary-panel" id="story-brief" data-term-select open>
       ${panelSummary('Story Intelligence Brief', summaryBadge)}
       ${status}
       ${configured ? null : html`<p class="muted">${provider.configurationHint()}</p>`}
@@ -492,14 +495,14 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
       <dt>Tokens</dt><dd>${sum.inputTokens ?? '-'} in / ${sum.outputTokens ?? '-'} out${sum.durationMs != null ? `, ${Math.round(sum.durationMs / 1000)} s` : ''}</dd>
     </dl>`;
   const revisions = s.summaryRevisions.length > 1
-    ? html`<details><summary>Earlier revisions</summary><table><thead><tr><th>Revision</th><th>Written</th><th>Trigger</th><th>Model</th></tr></thead>
-        <tbody>${s.summaryRevisions.map((r) => html`<tr><td>${r.revision}</td><td>${fmtDate(r.createdAt)}</td><td>${r.trigger}</td><td>${r.model}</td></tr>`)}</tbody></table></details>`
+    ? html`<details><summary>Earlier revisions</summary><div class="table-wrap"><table><thead><tr><th>Revision</th><th>Written</th><th>Trigger</th><th>Model</th></tr></thead>
+        <tbody>${s.summaryRevisions.map((r) => html`<tr><td>${r.revision}</td><td>${fmtDate(r.createdAt)}</td><td>${r.trigger}</td><td>${r.model}</td></tr>`)}</tbody></table></div></details>`
     : null;
 
   if (isBrief(sum.content)) {
     const brief = sum.content;
     const newTitle = previousRevision ? `What's new since the brief of ${fmtDate(previousRevision.createdAt)}` : SECTION_TITLE.new_since;
-    return html`<details class="panel summary-panel" id="story-brief" open>
+    return html`<details class="panel summary-panel" id="story-brief" data-term-select open>
       ${panelSummary('Story Intelligence Brief', summaryBadge, rewriteButton(s))}
       ${status}
       ${written}
@@ -518,7 +521,7 @@ function summaryPanel(app: App, s: StoryDetail, now: number, glossary: MarkableT
   // An executive summary from before the brief: it still reads, and its citations point
   // at the same numbered timeline.
   const legacy = sum.content as LegacySummaryContent;
-  return html`<details class="panel summary-panel" id="story-brief" open>
+  return html`<details class="panel summary-panel" id="story-brief" data-term-select open>
     ${panelSummary('Story Intelligence Brief', summaryBadge, rewriteButton(s))}
     ${status}
     ${written}
@@ -567,9 +570,9 @@ function assessmentPanel(s: StoryDetail, now: number): SafeHtml {
     ${s.categories.length ? html`<div class="tags">${s.categories.map((c) => html`<a class="chip" href="/?category=${c.id}">${c.label} ${pct(c.probability)}%</a>`)}</div>` : null}
     ${s.assessments.length > 1
       ? html`<details><summary>Assessment history</summary>
-          <table><thead><tr><th>When</th><th>Profile</th><th>Static priority</th><th>Relevance</th><th>Significance</th><th>Urgency</th><th>Coverage</th></tr></thead>
+          <div class="table-wrap"><table><thead><tr><th>When</th><th>Profile</th><th>Static priority</th><th>Relevance</th><th>Significance</th><th>Urgency</th><th>Coverage</th></tr></thead>
           <tbody>${s.assessments.map((a) => html`<tr><td>${fmtDate(a.createdAt)}</td><td>v${a.profileVersion}</td><td>${pct(a.priorityStatic)}</td>
-            <td>${pct(a.personalRelevance)}</td><td>${pct(a.significance)}</td><td>${pct(a.urgency)}</td><td>${pct(a.coverage)}</td></tr>`)}</tbody></table>
+            <td>${pct(a.personalRelevance)}</td><td>${pct(a.significance)}</td><td>${pct(a.urgency)}</td><td>${pct(a.coverage)}</td></tr>`)}</tbody></table></div>
         </details>`
       : null}
     <form method="post" action="/stories/${s.id}/reassess" class="inline"><button type="submit" class="secondary">Recalculate</button></form>
@@ -846,7 +849,7 @@ export function storyPage(app: App, s: StoryDetail, flash?: string | null, mapOp
     ${s.events.length
       ? html`<details class="panel changes-panel" id="story-changes">
           ${panelSummary('Changes', html`<span class="muted small">${plural(s.events.length, 'change')}</span>`)}
-          <table><tbody>${s.events.map((e) => html`<tr><td>${fmtDate(e.createdAt)}</td><td>${eventText(e)}</td></tr>`)}</tbody></table>
+          <div class="table-wrap"><table><tbody>${s.events.map((e) => html`<tr><td>${fmtDate(e.createdAt)}</td><td>${eventText(e)}</td></tr>`)}</tbody></table></div>
         </details>`
       : null}
   </article>`;

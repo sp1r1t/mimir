@@ -3,7 +3,7 @@ import { sourceHealth, type Source } from '../../repo/sources.js';
 import { isHttpUrl } from '../../util/url.js';
 import { duration, fmtDate, timeEl } from '../format.js';
 import { html, type SafeHtml } from '../html.js';
-import { layout } from '../layout.js';
+import { pageHeading, layout } from '../layout.js';
 
 const HEALTH_LABEL = { ok: 'Healthy', pending: 'Not fetched yet', failing: 'Failing', disabled: 'Disabled' } as const;
 
@@ -43,14 +43,14 @@ export function sourcesPage(app: App, flash?: string | null, error?: string | nu
   const now = Date.now();
   const failing = sources.filter((s) => sourceHealth(s) === 'failing').length;
   const body = html`
-    <h1>Sources</h1>
-    <p class="muted">${sources.length} feeds · ${sources.filter((s) => s.enabled).length} enabled · ${failing} failing.
-      Feeds are polled automatically; failing feeds back off exponentially and keep retrying.</p>
+    ${pageHeading('Sources', 'The feeds behind your news.')}
+    <p class="muted">${sources.length} feeds · ${sources.filter((s) => s.enabled).length} enabled · ${failing} need attention.
+      Your feeds update automatically.</p>
     <details class="panel" ${error ? html`open` : null}>
       <summary><strong>Add a feed</strong></summary>
       ${sourceForm(app, draft ?? null, '/sources', error)}
     </details>
-    <div class="table-wrap">
+    <div class="table-wrap source-directory">
     <table class="sources">
       <thead><tr><th>Name</th><th>Health</th><th>Last success</th><th>Next fetch</th><th>Interval</th><th>Articles (24h)</th><th>Last error</th><th></th></tr></thead>
       <tbody>${sources.map((s) => {
@@ -59,12 +59,12 @@ export function sourcesPage(app: App, flash?: string | null, error?: string | nu
           <td><a href="/sources/${s.id}">${s.name}</a>
             ${s.siteUrl ? html`<div class="muted small url">${externalLink(s.siteUrl)}</div>` : null}
             <div class="muted small url">${externalLink(s.url)}</div></td>
-          <td>${healthBadge(s)}</td>
-          <td>${timeEl(s.lastSuccessAt, now)}</td>
-          <td>${s.enabled ? timeEl(s.nextFetchAt, now) : '—'}</td>
-          <td>${duration(s.pollIntervalSeconds)}</td>
-          <td>${c?.total ?? 0} (${c?.last24h ?? 0})</td>
-          <td class="err">${s.lastError ? html`<span title="${fmtDate(s.lastErrorAt)}">${s.lastError}</span>` : null}</td>
+          <td data-label="Health">${healthBadge(s)}</td>
+          <td data-label="Last success">${timeEl(s.lastSuccessAt, now)}</td>
+          <td data-label="Next fetch">${s.enabled ? timeEl(s.nextFetchAt, now) : '—'}</td>
+          <td data-label="Interval">${duration(s.pollIntervalSeconds)}</td>
+          <td data-label="Articles (24h)">${c?.total ?? 0} (${c?.last24h ?? 0})</td>
+          <td class="err" data-label="Last error">${s.lastError ? html`<span title="${fmtDate(s.lastErrorAt)}">${s.lastError}</span>` : null}</td>
           <td class="row-actions">
             <form method="post" action="/sources/${s.id}/fetch"><button class="secondary small" ${s.enabled ? null : html`disabled`}>Fetch now</button></form>
             <form method="post" action="/sources/${s.id}/toggle"><button class="secondary small">${s.enabled ? 'Disable' : 'Enable'}</button></form>

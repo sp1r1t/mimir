@@ -369,6 +369,23 @@ export function buildServer(app: App): FastifyInstance {
     });
   });
 
+  // A term the reader selected in an article is added to the glossary and explained.
+  server.post('/api/terms', async (req, reply) => {
+    const body = (req.body ?? {}) as { name?: unknown; context?: unknown; articleId?: unknown };
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name || name.length > 120) return reply.code(400).send({ error: 'Select a word or a name of up to 120 characters.' });
+    const passage = typeof body.context === 'string' ? body.context.slice(0, 1500) : '';
+    const articleId = Number(body.articleId);
+    const article = Number.isInteger(articleId) ? app.articles.get(articleId) : null;
+    const res = await app.storyPipeline.addTermByHand(name, { articleTitle: article?.title ?? null, passage: passage || name });
+    if (!res.term) return reply.code(422).send({ error: res.message ?? 'Could not add the term.' });
+    const t = res.term;
+    return reply.code(res.created ? 201 : 200).send({
+      key: t.key, name: t.name, kind: t.kind, summary: t.summary, description: t.description,
+      sourceName: t.sourceName, sourceUrl: t.sourceUrl, status: t.status, created: res.created, message: res.message,
+    });
+  });
+
   server.get('/terms', async (_req, reply) => send(reply, glossaryPage(app)));
 
   server.post('/stories/:id/reassess', async (req, reply) => {

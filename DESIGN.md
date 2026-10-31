@@ -177,6 +177,26 @@ assessment. Shared alignment, fewer boxes, and quiet metadata preserve an overvi
 on a phone. Long words and URLs wrap without widening the page. Save and Seen stay
 together on the right below the headline, with comfortable touch targets.
 
+### D9 — One reader, one visual language
+
+**What.** The shared header has four reading destinations: Stories, Articles, Saved,
+and Glossary. Sources, the interest profile, statistics, and the low-score review
+live in a native More disclosure. Search follows the reading context. On phones,
+the header is two compact rows; a healthy classifier does not occupy reading space.
+The More menu carries its status, while configuration problems still show a banner.
+
+Every page shares the same headings, spacing, fields, focus treatment, and panel
+style. Article cards use the story-card score footer. Article detail leads with the
+text; classification, dates, and metadata are folded but remain available without
+JavaScript. Source rows become labelled cards on phones, with their actions in reach.
+Wide tables scroll within their panels. The glossary can be searched locally.
+Profile preferences come first; reclassification and JSON editing are secondary.
+
+**Why.** Reading is the frequent task. Settings and diagnostics should remain easy
+to reach without taking over every screen. The compact font scale stays as the reader
+chose it. Controls work with touch and keyboard, the skip link clears the sticky
+header, and navigation and forms retain their native HTML behaviour without scripts.
+
 ---
 
 ## The visual language

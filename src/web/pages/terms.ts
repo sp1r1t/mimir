@@ -30,10 +30,15 @@ export function glossaryPage(app: App, flash?: string | null): SafeHtml {
       <div class="meta">
         <span class="source">${terms.length} term${terms.length === 1 ? '' : 's'} Mimir can explain</span>
       </div>
-      <p class="muted">A term is looked up once, in an encyclopedia, and then reused in every brief and article that names it. Tap a term in a brief or an article to read its explanation.</p>
+      <p class="muted">Names, concepts, and context from your reading. Tap any highlighted term in a story to see its explanation.</p>
     </header>
+    ${terms.length ? html`<div class="glossary-tools">
+      <label class="sr-only" for="glossary-search">Find a term</label>
+      <input id="glossary-search" type="search" placeholder="Find a name, concept, or explanation" data-glossary-search>
+      <p class="result-count" data-glossary-count role="status">${terms.length} terms</p>
+    </div><p class="empty" data-glossary-empty hidden>No terms match your search.</p>` : null}
     ${terms.length
-      ? kinds.map((kind) => html`<section class="panel">
+      ? kinds.map((kind) => html`<section class="panel glossary-section">
           <h3>${KIND_LABEL[kind]}</h3>
           <ul class="term-list">${terms.filter((t) => t.kind === kind).map((t) => html`<li class="term-entry">
             <span class="term-name">${t.name}</span>
@@ -49,7 +54,7 @@ export function glossaryPage(app: App, flash?: string | null): SafeHtml {
             </div>
           </li>`)}</ul>
         </section>`)
-      : html`<section class="panel"><p class="muted">Mimir does not know a term yet. Open a story and ask it to explain the terms.</p></section>`}
+      : html`<section class="panel"><p class="muted">No glossary entries yet. Open a story and choose Explain the terms.</p></section>`}
   </article>`;
   return layout(app, { title: 'Glossary', nav: 'glossary', body, flash });
 }

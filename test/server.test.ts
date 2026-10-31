@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { parseHTML } from 'linkedom';
 import { buildServer } from '../src/web/server.js';
 import { FeedServer, fixture, makeApp, type TestApp } from './helpers.js';
 
@@ -80,6 +81,45 @@ describe('web interface', () => {
     const detail = await server.inject({ url: '/articles/1' });
     expect(detail.body).toContain('Discovered');
     expect(detail.body).not.toContain('<script>alert'); // content is sanitized
+  });
+
+  it('keeps navigation and contextual search accessible without JavaScript', async () => {
+    for (const [url, searchAction, activeHref] of [
+      ['/', '/', '/'],
+      ['/articles', '/articles', '/articles'],
+      ['/articles?saved=1', '/articles', '/articles?saved=1&sort=discovered'],
+      ['/sources', '/', '/sources'],
+    ]) {
+      const response = await server.inject({ url });
+      const { document } = parseHTML(response.body);
+      expect(response.statusCode).toBe(200);
+      expect(document.querySelector('.search')!.getAttribute('action')).toBe(searchAction);
+      expect(document.querySelector('.primary-nav')!.getAttribute('aria-label')).toBe('Main navigation');
+      expect(document.querySelector('.top a[aria-current="page"]')!.getAttribute('href')).toBe(activeHref);
+      expect(document.querySelector('.skip-link')!.getAttribute('href')).toBe('#main-content');
+      expect(document.querySelector('#main-content')).not.toBeNull();
+      const menu = document.querySelector('details.workspace-menu')!;
+      expect(menu.querySelector('summary')).not.toBeNull();
+      expect([...menu.querySelectorAll('nav a')].map((a) => a.getAttribute('href'))).toEqual([
+        '/sources', '/profile', '/stats', '/articles?sort=rank_asc&status=classified',
+      ]);
+    }
+  });
+
+  it('leads article details with reading content and keeps diagnostics available', async () => {
+    const source = t.app.sources.create({ name: 'News', url: srv.url('/rss'), pollIntervalSeconds: 600 });
+    await t.app.scheduler.fetchNow(source);
+    const response = await server.inject({ url: '/articles/1' });
+    const { document } = parseHTML(response.body);
+    const sections = [...document.querySelector('.article-detail')!.children].filter((el) => el.matches('.panel'));
+    expect(sections[0]!.querySelector('h3')!.textContent).toBe('Content');
+    for (const id of ['article-assessment', 'article-dates', 'article-metadata']) {
+      const panel = document.getElementById(id)!;
+      expect(panel.tagName).toBe('DETAILS');
+      expect(panel.hasAttribute('open')).toBe(false);
+      expect(panel.querySelector('summary')).not.toBeNull();
+    }
+    expect(document.querySelector('.search')!.getAttribute('action')).toBe('/articles');
   });
 
   it('records feedback via JSON and form posts', async () => {

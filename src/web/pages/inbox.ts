@@ -3,7 +3,7 @@ import { ARTICLE_TYPES } from '../../classification/jev.js';
 import { SORT_KEYS, type ArticleFilters, type ArticleListItem, type SortKey } from '../../repo/articles.js';
 import { timeEl } from '../format.js';
 import { html, type SafeHtml } from '../html.js';
-import { layout, type NavKey } from '../layout.js';
+import { pageHeading, layout, type NavKey } from '../layout.js';
 import { articleLinks, discoveredVia } from '../provenance.js';
 
 type Query = Record<string, string | undefined>;
@@ -80,25 +80,24 @@ export function statusBadge(a: ArticleListItem, classifierReady: boolean): SafeH
 
 function articleCard(a: ArticleListItem, classifierReady: boolean, now: number): SafeHtml {
   const assigned = a.categories.filter((c) => c.assigned).sort((x, y) => y.probability - x.probability);
-  return html`<article class="card ${a.classificationStatus}">
+  return html`<article class="card article-card ${a.classificationStatus}">
     <div class="card-main">
       <h2><a href="/articles/${a.id}">${a.title ?? '(untitled)'}</a></h2>
-      <div class="meta">
+      <div class="article-card-meta"><div class="meta">
         ${discoveredVia(a.provenance, a.sourceName)}
         <span title="Published (as claimed by the source)">Published ${timeEl(a.publishedAt, now)}</span>
         <span title="First seen by Mimir">Discovered ${timeEl(a.discoveredAt, now)}</span>
         ${a.classifiedAt ? html`<span title="Classified with profile v${a.profileVersion}">Classified ${timeEl(a.classifiedAt, now)}</span>` : null}
         ${articleLinks(a.id, a.url, a.provenance)}
-      </div>
+      </div>${feedbackControls(a)}</div>
       ${a.summaryText ? html`<p class="summary">${a.summaryText.slice(0, 280)}${a.summaryText.length > 280 ? '…' : ''}</p>` : null}
-      <div class="tags">
+      <div class="chip-row tags-row">
         ${statusBadge(a, classifierReady)}
         ${assigned.map((c) => html`<a class="chip" href="/articles?category=${c.id}" title="P = ${Math.round(c.probability * 100)}%">${c.label}</a>`)}
         ${a.articleType ? html`<span class="badge type">${a.articleType.replace(/_/g, ' ')}</span>` : null}
         ${a.investigate != null && a.investigate >= 0.5 ? html`<span class="badge investigate" title="Worth investigating: ${Math.round(a.investigate * 100)}%">Worth investigating</span>` : null}
         ${a.promotional != null && a.promotional >= 0.5 ? html`<span class="badge promo" title="Promotional: ${Math.round(a.promotional * 100)}%">Promotional</span>` : null}
       </div>
-      ${feedbackControls(a)}
     </div>
     <div class="scores">
       ${scoreCell('Rank', a.rankScore, 'rank')}
@@ -184,6 +183,7 @@ export function inboxPage(app: App, query: Query, flash?: string | null): SafeHt
   </form>`;
 
   const body = html`
+    ${pageHeading(f.q ? 'Search results' : nav === 'saved' ? 'Saved articles' : nav === 'review' ? 'Low scores' : 'Articles', nav === 'saved' ? 'The articles you kept for later.' : nav === 'review' ? 'Find useful reporting your profile may have missed.' : 'Explore the reporting behind your stories.')}
     <details class="filters-wrap">
       <summary>Filters${activeFilterCount(query) ? html` <span class="muted">&middot; ${activeFilterCount(query)} active</span>` : null}</summary>
       ${filters}
@@ -192,7 +192,7 @@ export function inboxPage(app: App, query: Query, flash?: string | null): SafeHt
       ${f.minRelevance == null && f.maxRelevance == null && f.status === 'all' ? ' · all scores shown, including low-scoring and unclassified' : null}
       · <a href="/articles?sort=rank_asc&status=classified">Review the lowest-ranked</a></p>
     <div class="list">
-      ${result.items.length ? result.items.map((a) => articleCard(a, classifierReady, now)) : html`<p class="empty">No articles match these filters yet.</p>`}
+      ${result.items.length ? result.items.map((a) => articleCard(a, classifierReady, now)) : f.saved ? html`<p class="empty">No saved articles yet. Use Save on an article to keep it here.</p>` : html`<p class="empty">No articles match these filters yet.</p>`}
     </div>
     ${pages > 1
       ? html`<nav class="pager">

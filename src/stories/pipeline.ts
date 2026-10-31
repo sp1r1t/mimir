@@ -12,7 +12,7 @@ import { SummaryProviderError, type SummaryProvider, type SummaryTrigger } from 
 import { gistTexts, isBrief, parseSummary, preparePrompt, selectArticles, SUMMARY_PROMPT_VERSION, SummaryValidationError, type BriefContent } from '../summaries/summary.js';
 import { termKey, type FoundTerm, type TermKind } from '../terms/schema.js';
 import { clearFit, fitsRole } from '../terms/fit.js';
-import { dropFragmentTerms, firstSentences, parseExplanations, parseTerms, parseVerifications, prepareExplainPrompt, prepareTermsPrompt, prepareVerifyPrompt, TermsValidationError, type SuspectTerm } from '../terms/terms.js';
+import { dropFragmentTerms, firstSentences, parseExplanations, parseTerms, parseVerifications, prepareExplainPrompt, prepareSelectionPrompt, prepareTermsPrompt, sentenceWith, prepareVerifyPrompt, TermsValidationError, type SuspectTerm } from '../terms/terms.js';
 import type { Encyclopedia, TermArticle } from '../terms/wikipedia.js';
 import { backoffMs, sleep } from '../util/backoff.js';
 import { iso, systemClock, type Clock } from '../util/time.js';
@@ -1006,6 +1006,81 @@ export class StoryPipeline {
       if (verdict === false) wrong.add(a.key);
     }
     return wrong;
+  }
+
+  /**
+   * A term the reader selected in an article: it is filed in the glossary and explained
+   * at once, from the encyclopedia or, failing that, from the passage it was selected in.
+   * A term the glossary already explains is returned as it is.
+   */
+  async addTermByHand(
+    name: string,
+    context: { articleTitle: string | null; passage: string },
+  ): Promise<{ term: ReturnType<StoryRepository['termByKey']>; created: boolean; message: string | null }> {
+    const st = this.d.stories;
+    const clean = name.replace(/\s+/g, ' ').trim();
+    const key = termKey(clean);
+    if (!key) return { term: null, created: false, message: 'Select a word or a name first.' };
+    const existing = st.termByKey(key);
+    if (existing?.status === 'explained') return { term: existing, created: false, message: null };
+    if (!this.d.config.terms.enabled) return { term: null, created: false, message: 'Term lookup is turned off.' };
+    st.addManualTerm(clean);
+    const signal = new AbortController().signal;
+    const cfg = this.d.config.terms;
+
+    // The model reads the passage and says what the word means there. A word has many
+    // meanings, and the encyclopedia knows only the most famous one of them.
+    let explanation: string | null = null;
+    if (this.d.terms.isConfigured()) {
+      try {
+        const prompt = prepareSelectionPrompt(clean, context, { language: this.d.config.summaries.language });
+        const capacity = await this.d.terms.capacity('manual', signal);
+        if (capacity.ok) {
+          const result = await this.d.terms.generate({ system: prompt.system, user: prompt.user, maxOutputTokens: cfg.maxOutputTokens }, signal);
+          explanation = parseExplanations(result.text)[0]?.explanation ?? null;
+        }
+      } catch {
+        explanation = null;
+      }
+    }
+
+    // The encyclopedia is asked as well, and its article counts only when it is about
+    // the same thing as the passage: the explanation, or failing that the sentence the
+    // term stands in, is what it has to agree with.
+    const note = explanation ?? sentenceWith(context.passage, clean);
+    let article: TermArticle | null = null;
+    try {
+      article = await this.lookupTerm(clean, null, note, signal);
+    } catch {
+      article = null;
+    }
+    if (article && !clearFit(article, note)) {
+      const wrong = await this.verifyArticles([{ key, name: clean, role: note, article }], signal).catch(() => new Set([key]));
+      // With nobody to check it, an article that does not plainly agree is not trusted.
+      if (wrong.has(key) || !this.d.terms.isConfigured()) article = null;
+    }
+
+    if (explanation) {
+      st.explainTerm(key, {
+        summary: explanation,
+        description: article?.description ?? null,
+        sourceName: article ? 'Mimir, from the article, and Wikipedia' : 'Mimir, from the article',
+        sourceUrl: article?.url ?? null,
+      });
+    } else if (article) {
+      st.explainTerm(key, {
+        summary: firstSentences(article.extract ?? article.description ?? '', 2),
+        description: article.description,
+        sourceName: 'Wikipedia',
+        sourceUrl: article.url,
+      });
+    }
+    const term = st.termByKey(key);
+    if (term && term.status !== 'explained') {
+      st.markTermUnknown(key);
+      return { term: st.termByKey(key), created: true, message: 'Added, but no explanation could be found yet.' };
+    }
+    return { term, created: true, message: null };
   }
 
   /** The encyclopedia gets three tries: it is a public service and it says so. */

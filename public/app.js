@@ -79,8 +79,12 @@ function renderSeen(form, card, seen) {
 function removeCard(card, filter) {
   const list = card.parentElement;
   const next = card.nextElementSibling ?? card.previousElementSibling;
+  const scrollY = window.scrollY;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Stability first: the card fades where it stands and nothing around it moves. Only
+  // then does the gap close, and the page is held where the reader had it.
   card.classList.add('leaving');
-  setTimeout(() => {
+  const finish = () => {
     card.remove();
     const total = document.querySelector('[data-total]');
     if (total) {
@@ -102,8 +106,19 @@ function removeCard(card, filter) {
           ? '<p class="empty">No stories saved yet. Tap the star on a story to keep it here.</p>'
           : '<p class="empty">No stories marked as seen.</p>';
     }
-  }, 200);
-  next?.querySelector('.seen-btn')?.focus();
+    // Whatever the browser did to the scroll position, the reader stays where they were.
+    if (Math.abs(window.scrollY - scrollY) > 1) window.scrollTo({ top: scrollY, behavior: 'instant' });
+  };
+  // Focus moves on without scrolling: the next card may be off screen, and the page must not jump.
+  next?.querySelector('.seen-btn')?.focus({ preventScroll: true });
+  setTimeout(() => {
+    if (reduce) return finish();
+    card.style.height = `${card.offsetHeight}px`;
+    card.style.overflow = 'hidden';
+    void card.offsetHeight;
+    card.classList.add('collapsing');
+    setTimeout(finish, 260);
+  }, 220);
 }
 
 // A story that is let go while the list shows only saved stories leaves the list.
@@ -261,7 +276,7 @@ document.addEventListener('click', (ev) => {
   const container = document.getElementById('topics');
   const tpl = document.getElementById('topic-template');
   const next = Math.max(-1, ...[...container.querySelectorAll('.topic-row')].map((r) => Number(r.dataset.index))) + 1;
-  const html = tpl.innerHTML.replaceAll('t.9999.', `t.${next}.`).replace('data-index="9999"', `data-index="${next}"`);
+  const html = tpl.innerHTML.replaceAll('t.9999.', `t.${next}.`).replaceAll('topic-9999-', `topic-${next}-`).replace('data-index="9999"', `data-index="${next}"`);
   container.insertAdjacentHTML('beforeend', html);
   container.lastElementChild.querySelector('input[name$=".label"]').focus();
 });
@@ -870,3 +885,130 @@ function ensureElapsedTicker() {
 }
 
 ensureElapsedTicker();
+
+
+// Native disclosure navigation works without JavaScript; add light-dismiss and Escape.
+document.addEventListener('click', (ev) => {
+  const menu = document.querySelector('.workspace-menu[open]');
+  if (menu && !menu.contains(ev.target)) menu.open = false;
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  const menu = document.querySelector('.workspace-menu[open]');
+  if (!menu) return;
+  menu.open = false;
+  menu.querySelector('summary').focus();
+});
+
+// Search the glossary locally, keeping explanations and source links together.
+const glossarySearch = document.querySelector('[data-glossary-search]');
+glossarySearch?.addEventListener('input', () => {
+  const query = glossarySearch.value.trim().toLocaleLowerCase();
+  let matches = 0;
+  document.querySelectorAll('.glossary-section').forEach((section) => {
+    let visible = 0;
+    section.querySelectorAll('.term-entry').forEach((entry) => {
+      const text = ['.term-name', '.term-desc', '.term-summary'].map((selector) => entry.querySelector(selector)?.textContent ?? '').join(' ').toLocaleLowerCase();
+      entry.hidden = !text.includes(query);
+      if (!entry.hidden) visible++;
+    });
+    section.hidden = visible === 0;
+    matches += visible;
+  });
+  document.querySelector('[data-glossary-count]').textContent = `${matches} ${matches === 1 ? 'term' : 'terms'}${query ? ' matching your search' : ''}`;
+  document.querySelector('[data-glossary-empty]').hidden = matches !== 0;
+});
+
+
+// Reader settings: font size, remembered in this browser.
+(function fontSizeSetting() {
+  const input = document.querySelector('[data-font-size]');
+  if (!input) return;
+  const out = document.querySelector('[data-font-size-value]');
+  const show = (px) => { input.value = px; if (out) out.textContent = `${px}px`; };
+  show(Number(localStorage.getItem('mimir-font-size')) || 15);
+  input.addEventListener('input', () => {
+    const px = Number(input.value);
+    document.documentElement.style.fontSize = `${px}px`;
+    localStorage.setItem('mimir-font-size', String(px));
+    show(px);
+  });
+  document.querySelector('[data-font-size-reset]')?.addEventListener('click', () => {
+    localStorage.removeItem('mimir-font-size');
+    document.documentElement.style.fontSize = '';
+    show(15);
+  });
+})();
+
+
+// ---- Adding a term from a selection ----------------------------------------------------
+// Select a word or a name in the text of an article, and a button offers to add it to the
+// glossary. The server looks it up and explains it, and the explanation is kept for good.
+(function termSelection() {
+  const area = document.querySelector('[data-term-select]');
+  if (!area) return;
+  let btn = null;
+  const drop = () => { btn?.remove(); btn = null; };
+
+  function currentSelection() {
+    const sel = getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+    const range = sel.getRangeAt(0);
+    if (!area.contains(range.commonAncestorContainer)) return null;
+    const name = sel.toString().replace(/\s+/g, ' ').trim();
+    if (!name || name.length > 120 || name.split(' ').length > 8) return null;
+    const block = (range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement)?.closest('p, li, blockquote, div');
+    return { name, range, context: (block?.textContent ?? name).replace(/\s+/g, ' ').trim().slice(0, 1200) };
+  }
+
+  function offer() {
+    if (btn?.disabled) return;
+    const picked = currentSelection();
+    if (!picked) return drop();
+    drop();
+    const rect = picked.range.getBoundingClientRect();
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'term-add';
+    btn.textContent = `Add “${picked.name.length > 28 ? picked.name.slice(0, 27) + '…' : picked.name}” to glossary`;
+    if (matchMedia('(pointer: coarse)').matches) {
+      // On a touch screen the browser's own handles and menu sit around the selection.
+      btn.classList.add('docked');
+    } else {
+      btn.style.left = `${Math.max(8, Math.min(window.scrollX + rect.left, window.scrollX + window.innerWidth - 260))}px`;
+      btn.style.top = `${window.scrollY + rect.bottom + 8}px`;
+    }
+    // Keep the selection while the button is pressed.
+    btn.addEventListener('mousedown', (ev) => ev.preventDefault());
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = 'Looking it up…';
+      const anchor = { getBoundingClientRect: () => rect, setAttribute() {} };
+      try {
+        const res = await fetch('/api/terms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ name: picked.name, context: picked.context, articleId: Number(area.dataset.article) }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+        termCache.set(body.key, body);
+        drop();
+        getSelection()?.removeAllRanges();
+        showTermCard(anchor, body);
+        showNotice(body.message ?? (body.created ? 'Added to the glossary.' : 'Already in the glossary.'), !!body.message);
+      } catch (err) {
+        drop();
+        showNotice(`Could not add the term: ${err.message}`, true);
+      }
+    });
+    document.body.appendChild(btn);
+  }
+
+  // Mouse, keyboard and touch selections all end in a selection change.
+  let timer = null;
+  document.addEventListener('selectionchange', () => {
+    clearTimeout(timer);
+    timer = setTimeout(offer, 250);
+  });
+})();

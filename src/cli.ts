@@ -6,6 +6,7 @@ import { repairExtractedArticles } from './extraction/repair.js';
 import { JobQueue } from './jobs/queue.js';
 import { CLASSIFY } from './pipeline.js';
 import { ProfileRepository } from './profile/repository.js';
+import { formatReport, runReplay } from './stories/replay.js';
 
 const USAGE = `Usage: node dist/cli.js <command>
 
@@ -16,10 +17,13 @@ Commands:
   repair-content       Clean stored article HTML without downloading pages,
                        and queue classification where that text changed
   status               Print article, source, and job counts
+  replay [--json]      Replay the recorded matching decisions and report how well the
+                       similarity score tells same-story pairs from different ones
 `;
 
 async function main(): Promise<void> {
-  const [cmd, arg] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const [cmd, arg] = args;
   const config = loadConfig();
   switch (cmd) {
     case 'migrate': {
@@ -74,6 +78,16 @@ async function main(): Promise<void> {
       console.log('Sources:', q('SELECT enabled, COUNT(*) AS n, SUM(consecutive_failures > 0) AS failing FROM sources GROUP BY 1'));
       console.log('Jobs:', q('SELECT kind, status, COUNT(*) AS n FROM jobs GROUP BY 1, 2'));
       db.close();
+      break;
+    }
+    case 'replay': {
+      const db = openDatabase(config.dbPath);
+      try {
+        const report = runReplay(db, { threshold: config.stories.minSimilarity });
+        console.log(args.includes('--json') ? JSON.stringify(report, null, 2) : formatReport(report));
+      } finally {
+        db.close();
+      }
       break;
     }
     default:

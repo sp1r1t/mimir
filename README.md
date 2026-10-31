@@ -118,6 +118,10 @@ a key.
 
 ## Use Mimir
 
+- **Navigation:** Stories, Articles, Saved articles, and Glossary share the compact
+  header. **More** opens Sources, Interest profile, Statistics, and Review low scores,
+  and shows classifier status. Search follows the story or article context. The
+  navigation and forms work without JavaScript; keyboard users can skip to content.
 - **Stories:** the start page, opening on the **Relevant new** quick view: unseen stories
   with personal relevance of at least 70 and a publication in the last 7 days, newest
   development first. The tabs above the filters switch between **Relevant new** (with its
@@ -204,19 +208,22 @@ a key.
   **Explain again** refreshes them. The links of a term — its source, the articles it
   comes from and its own button — stand on one line, so a term does not take a screen
   of its own. The **Glossary** page in the navigation lists
-  everything Mimir knows, grouped by kind. See **Terms and the glossary** below.
+  everything Mimir knows, grouped by kind. Its search filters names and explanations
+  locally, without a new model request. See **Terms and the glossary** below.
 - **Articles:** sort by rank, personal relevance, publication or discovery; search title,
   summary, text and author; filter by source, category, relevance range, date,
   processing status, saved state, feedback or article type. Clear filters to see all
   stored articles, including low scores and failures.
-- **Article details:** inspect source content, metadata and original entry data,
+- **Article details:** start with the article text; expand Classification, Timeline,
+  or Metadata to inspect scores, timestamps, metadata and original entry data,
   publication/update/discovery/ingestion timestamps, extraction status, scores,
   classification history and raw structured results. Open the publisher's original
   article or request a new classification. Discussion links supplied by feeds (RSS
   comments and Atom HTML replies) appear alongside the original on article lists,
   details and the story timeline. Existing articles use their preserved feed metadata;
   no download or reclassification is needed to show these links.
-- **Sources:** add a feed URL or a page advertising a feed; edit intervals, extraction
+- **Sources:** feeds appear as a table on larger screens and labelled cards on phones,
+  with fetch and enable/disable controls on each row. Add a feed URL or a page advertising a feed; edit intervals, extraction
   preferences and tags; enable, disable, fetch or delete subscriptions. Fetch history
   includes HTTP status, counts and errors. Deleting a source keeps its articles and
   provenance snapshots.
@@ -686,6 +693,30 @@ job recovery are designed for this deployment, not multiple replicas or network
 filesystems. Articles, classification history, profiles and feedback are retained
 indefinitely; monitor disk usage. Only fetch logs and completed jobs are pruned.
 
+## Measuring the story matcher
+
+Every matching decision is written down: the article, the stories it was compared
+with, the similarity each one got, what the matcher said about each, and the
+corrections the reader made by hand. The replay command reads that history back
+and measures how well the similarity score is doing:
+
+```sh
+docker compose exec -T mimir node dist/cli.js replay
+docker compose exec -T mimir node dist/cli.js replay --json
+```
+
+The report says how far the score separates the pairs the matcher called the same
+story from the pairs it called a different one, how often the score ranked the
+candidates the way the matcher did, what a lower threshold would add, how much a
+story's size or the amount of text in an article moves its score, which candidates
+the threshold kept back, and what the reader's own merges score. It reads only
+what was recorded and calls no model, so it costs nothing.
+
+Use it before changing the score: a new rule is only an improvement if the replay
+says so. The score itself lives in `src/stories/similarity.ts` and is deliberately
+separable from the retrieval that feeds it, so two rules can be measured against
+the same decisions.
+
 ## Backup, restore and upgrades
 
 Create a consistent online SQLite backup while collection continues:
@@ -777,7 +808,7 @@ src/extraction/       permitted article text extraction and host pacing
 src/classification/   replaceable Classifier interface, Jev adapter, ranking
 src/jobs/             SQLite queue and bounded workers
 src/profile/          validated profile schema and version repository
-src/stories/          candidate retrieval, Jev story matcher, assessment, story jobs
+src/stories/          candidate retrieval, similarity score, Jev story matcher, assessment, replay, story jobs
 src/summaries/        SummaryProvider interface, MiniMax and mock providers, prompt and validation
 src/terms/            term prompt and validation, Wikipedia client, glossary markup, word count
 src/repo/             article/source/feedback/statistics persistence

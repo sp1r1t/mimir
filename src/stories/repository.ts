@@ -9,7 +9,8 @@ import { countWords, ordinaryNames } from '../terms/vocabulary.js';
 import { iso, systemClock, type Clock } from '../util/time.js';
 import type { AssessmentMember, StoryAssessment } from './assessment.js';
 import type { CandidateJudgement, MatchCandidate, MatchReport } from './matcher.js';
-import { anyTermQuery, contentTerms, publisherOf, titleKey } from './text.js';
+import { anyTermQuery, publisherOf } from './text.js';
+import { idfFor, matchTerms, scoreAgainstStory, storyMemberTexts } from './similarity.js';
 
 export type StoryRole = 'origin' | 'coverage' | 'update';
 export type SummaryState = 'none' | 'pending' | 'running' | 'ready' | 'stale' | 'failed';
@@ -320,8 +321,6 @@ function occurredAt(publishedAt: string | null, discoveredAt: string): string {
   return publishedAt && publishedAt <= discoveredAt ? publishedAt : discoveredAt;
 }
 
-const MEMBER_TEXT_LIMIT = 15;
-
 export class StoryRepository {
   constructor(
     private readonly db: DB,
@@ -362,32 +361,15 @@ export class StoryRepository {
     };
   }
 
-  /** BM25 inverse document frequency: positive even for terms in every article, so small corpora still match. */
-  private idf(terms: string[]): Map<string, number> {
-    const total = (this.db.prepare('SELECT COUNT(*) AS n FROM articles').get() as { n: number }).n;
-    const weight = (doc: number) => Math.log(1 + (total - doc + 0.5) / (doc + 0.5));
-    const out = new Map<string, number>(terms.map((t) => [t, weight(0)]));
-    if (!terms.length) return out;
-    const rows = this.db
-      .prepare(`SELECT term, doc FROM articles_fts_vocab WHERE term IN (${terms.map(() => '?').join(',')})`)
-      .all(...terms) as { term: string; doc: number }[];
-    for (const r of rows) out.set(r.term, weight(r.doc));
-    return out;
-  }
-
-  private static matchTerms(title: string | null, summary: string | null): string[] {
-    return [...new Set([...contentTerms(title), ...contentTerms(summary?.slice(0, 500))])];
-  }
-
   /**
    * Stories with members published within `windowDays` of the article that share its
    * distinctive terms. Similarity is the IDF-weighted share of the article's terms that
    * appear in the story's titles and summaries.
    */
   candidates(article: ArticleForMatching, opts: { windowDays: number; limit: number; excludeStoryId?: number }): Candidate[] {
-    const terms = StoryRepository.matchTerms(article.title, article.summaryText);
+    const terms = matchTerms(article.title, article.summaryText);
     if (!terms.length) return [];
-    const idf = this.idf(terms);
+    const idf = idfFor(this.db, terms);
     const query = anyTermQuery([...terms].sort((a, b) => idf.get(b)! - idf.get(a)!).slice(0, 12));
     const t = Date.parse(article.occurredAt);
     const windowMs = opts.windowDays * 86_400_000;
@@ -410,27 +392,10 @@ export class StoryRepository {
         }) as { storyId: number }[]
     ).map((r) => r.storyId);
 
-    const titleTerms = [...new Set(contentTerms(article.title))];
-    const weight = (ts: string[]) => ts.reduce((sum, term) => sum + idf.get(term)!, 0);
-    const articleWeight = weight(terms);
-    const titleWeight = weight(titleTerms);
-    const key = titleKey(article.title);
-    const memberStmt = this.db.prepare(
-      `SELECT a.title, a.summary_text AS summaryText FROM story_articles sa JOIN articles a ON a.id = sa.article_id
-       WHERE sa.story_id = ? ORDER BY sa.role = 'coverage', sa.occurred_at DESC LIMIT ${MEMBER_TEXT_LIMIT}`,
-    );
     const out: Candidate[] = [];
     for (const storyId of storyIds) {
-      const members = memberStmt.all(storyId) as { title: string | null; summaryText: string | null }[];
-      const storyTerms = new Set(members.flatMap((m) => StoryRepository.matchTerms(m.title, m.summaryText)));
-      const shared = (ts: string[]) => weight(ts.filter((term) => storyTerms.has(term)));
-      // Teasers add many terms that dilute overlap; the title alone is often the better signal.
-      const similarity = Math.max(
-        articleWeight > 0 ? shared(terms) / articleWeight : 0,
-        titleWeight > 0 ? shared(titleTerms) / titleWeight : 0,
-      );
-      const titleMatch = key.split(' ').length >= 4 && members.some((m) => titleKey(m.title) === key);
-      out.push({ storyId, similarity, titleMatch });
+      const members = storyMemberTexts(this.db, storyId);
+      out.push({ storyId, ...scoreAgainstStory(article, members, idf) });
     }
     return out.sort((a, b) => Number(b.titleMatch) - Number(a.titleMatch) || b.similarity - a.similarity).slice(0, opts.limit);
   }
@@ -925,6 +890,20 @@ export class StoryRepository {
           .run(storyId, row.id, t.role, JSON.stringify(t.sources), now);
       }
     })();
+  }
+
+  /** File a term the reader picked by hand. It waits to be explained; an existing term is left as it is. */
+  addManualTerm(name: string): TermRecord {
+    const key = termKey(name);
+    const now = this.now();
+    this.db
+      .prepare(
+        `INSERT INTO terms (term_key, name, kind, wiki, status, created_at, updated_at)
+           VALUES (?, ?, 'other', NULL, 'pending', ?, ?)
+           ON CONFLICT(term_key) DO NOTHING`,
+      )
+      .run(key, name, now, now);
+    return this.termByKey(key) as TermRecord;
   }
 
   /** Let a story go of a term: the name turned out not to be a term of that story. */

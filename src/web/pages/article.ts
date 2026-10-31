@@ -68,13 +68,13 @@ function classificationView(c: ClassificationRecord): SafeHtml {
       <dt>Article type</dt><dd>${c.articleType?.replace(/_/g, ' ') ?? '—'}${conf.articleType != null ? html` <span class="muted">(confidence ${pct(conf.articleType)}%)</span>` : null}</dd>
     </dl>
     <h4>Topic categories</h4>
-    <table class="cats">
+    <div class="table-wrap"><table class="cats">
       <thead><tr><th>Topic</th><th>Probability</th><th>Assigned</th></tr></thead>
       <tbody>${cats.map((t) => html`<tr class="${t.assigned ? 'assigned' : ''}">
         <td><a href="/articles?category=${t.id}">${t.label}</a></td>
         <td><span class="meter inline"><span style="width:${Math.round(t.probability * 100)}%"></span></span> ${pct(t.probability)}%</td>
         <td>${t.assigned ? 'yes' : 'no'}</td></tr>`)}</tbody>
-    </table>
+    </table></div>
     <dl class="kv small">
       <dt>Classified</dt><dd>${fmtDate(c.createdAt)}</dd>
       <dt>Classifier</dt><dd>${c.classifier} · ${c.classifierVersion}</dd>
@@ -110,7 +110,7 @@ export function articlePage(app: App, a: ArticleDetail, flash?: string | null): 
           : html`<p class="muted">No content was provided by the feed.</p>`;
 
   const body = html`
-  <article class="detail">
+  <article class="detail article-detail">
     <header>
       <h1>${markTerms(a.title ?? '(untitled)', glossary)}</h1>
       <div class="meta">
@@ -123,8 +123,14 @@ export function articlePage(app: App, a: ArticleDetail, flash?: string | null): 
         <span class="muted">(${story.role === 'origin' ? 'first report' : story.role}, ${story.articleCount} article${story.articleCount === 1 ? '' : 's'})</span></p>` : null}
     </header>
 
-    <section class="panel">
-      <h3>Classification</h3>
+    <section class="panel" data-term-select data-article="${a.id}">
+      <h3>Content</h3>
+      <p class="muted">${contentSummary(a)}</p>
+      ${content}
+    </section>
+
+    <details class="panel" id="article-assessment">
+      <summary><h3>Classification</h3></summary>
       ${statusBadge(a, app.classifier.isConfigured())}
       ${a.classificationError ? html`<p class="error-text">Last error: ${a.classificationError}</p>` : null}
       ${current ? classificationView(current) : html`<p class="muted">Not classified yet.</p>`}
@@ -133,18 +139,18 @@ export function articlePage(app: App, a: ArticleDetail, flash?: string | null): 
       </form>
       ${older.length
         ? html`<h4>Classification history</h4>
-          <table class="history">
+          <div class="table-wrap"><table class="history">
             <thead><tr><th>When</th><th>Profile</th><th>Model</th><th>Rank</th><th>Relevance</th><th>Significance</th><th>Urgency</th><th>Categories</th></tr></thead>
             <tbody>${older.map((c) => html`<tr>
               <td>${fmtDate(c.createdAt)}</td><td>v${c.profileVersion}</td><td>${c.model}<br><span class="muted">${c.classifierVersion}</span></td>
               <td>${pct(c.rankScore)}</td><td>${pct(c.personalRelevance)}</td><td>${pct(c.significance)}</td><td>${pct(c.urgency)}</td>
               <td>${c.categories.filter((x) => x.assigned).map((x) => x.label).join(', ') || '—'}</td></tr>`)}</tbody>
-          </table>`
+          </table></div>`
         : null}
-    </section>
+    </details>
 
-    <section class="panel">
-      <h3>Timeline</h3>
+    <details class="panel" id="article-dates">
+      <summary><h3>Timeline</h3></summary>
       <dl class="kv">
         <dt>Published</dt><dd>${fmtDate(a.publishedAt)} <span class="muted">(as claimed by the source)</span></dd>
         <dt>Updated by source</dt><dd>${fmtDate(a.sourceUpdatedAt)}</dd>
@@ -155,16 +161,12 @@ export function articlePage(app: App, a: ArticleDetail, flash?: string | null): 
         <dt>Classified</dt><dd>${fmtDate(a.classifiedAt)}</dd>
         <dt>First viewed</dt><dd>${fmtDate(a.firstViewedAt)}</dd>
       </dl>
-    </section>
+    </details>
 
-    <section class="panel">
-      <h3>Content</h3>
-      <p class="muted">${contentSummary(a)}</p>
-      ${content}
-    </section>
 
-    <section class="panel">
-      <h3>Metadata</h3>
+
+    <details class="panel" id="article-metadata">
+      <summary><h3>Metadata</h3></summary>
       <dl class="kv small">
         <dt>Original URL</dt><dd>${a.url ? html`<a href="${a.url}" rel="noopener noreferrer" target="_blank">${a.url}</a>` : '—'}</dd>
         <dt>Canonical URL</dt><dd>${a.canonicalUrl ?? '—'}</dd>
@@ -180,14 +182,14 @@ export function articlePage(app: App, a: ArticleDetail, flash?: string | null): 
         <pre>${json(e.rawFirst)}</pre>
         ${e.rawLatest ? html`<p>Latest version:</p><pre>${json(e.rawLatest)}</pre>` : null}
       </details>`)}
-    </section>
+    </details>
 
     ${a.feedbackEvents.length
       ? html`<section class="panel"><h3>Your feedback and interactions</h3>
-        <table><thead><tr><th>When</th><th>Event</th><th>Profile</th><th>Rank shown</th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>When</th><th>Event</th><th>Profile</th><th>Rank shown</th></tr></thead>
         <tbody>${a.feedbackEvents.map((e) => html`<tr><td>${fmtDate(e.createdAt)}</td><td>${e.eventType.replace(/_/g, ' ')}</td>
-          <td>${e.profileVersion != null ? `v${e.profileVersion}` : '—'}</td><td>${pct(e.rankScore)}</td></tr>`)}</tbody></table></section>`
+          <td>${e.profileVersion != null ? `v${e.profileVersion}` : '—'}</td><td>${pct(e.rankScore)}</td></tr>`)}</tbody></table></div></section>`
       : null}
   </article>`;
-  return layout(app, { title: a.title ?? 'Article', nav: 'none', body, flash });
+  return layout(app, { title: a.title ?? 'Article', nav: 'inbox', body, flash });
 }
