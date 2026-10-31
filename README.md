@@ -9,6 +9,8 @@ workers. SQLite FTS5 provides search and story candidates. No external workflow
 service or vector database is required. The rules the interface follows, and why they
 are what they are, are written down in [DESIGN.md](DESIGN.md).
 
+https://github.com/user-attachments/assets/cbdcc261-995a-4a2c-b643-e559c8ed61c4
+
 ## Start with Docker Compose
 
 Requires Docker Engine and Docker Compose v2, with outbound HTTPS and DNS access.
