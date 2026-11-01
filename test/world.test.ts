@@ -264,6 +264,26 @@ describe('the shapes of the map', () => {
   });
 });
 
+describe('the map and the header', () => {
+  it('keeps the map under the sticky header', () => {
+    // The map library draws its panes high in the stacking order, so the canvas has
+    // to be a stacking context of its own. Without one the map paints over the
+    // header as soon as it scrolls up behind it.
+    const css = readFileSync(resolve('public/app.css'), 'utf8');
+    const rule = css.match(/\.map-canvas\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(rule).toMatch(/position:\s*relative/);
+    expect(rule).toMatch(/z-index:\s*0/);
+  });
+
+  it('shows the whole world when the reader asks for it', () => {
+    // "All world" is a promise: the whole world, not a part of it that happens to
+    // fill the screen.
+    const js = readFileSync(resolve('public/app.js'), 'utf8');
+    expect(js).toMatch(/fitBounds\(worldBounds/);
+    expect(js).toMatch(/framing = 'all'/);
+  });
+});
+
 describe('the axis', () => {
   it('puts the poles at the ends and nothing off the axis', () => {
     expect(POSITION_SCORE.left).toBe(-1);

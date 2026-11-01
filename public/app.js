@@ -652,7 +652,7 @@ function drawWorldMap(card, kind) {
       const palette = worldPalette();
       const focus = data.focus || null;
       canvas.classList.add('world-canvas');
-      const map = L.map(canvas, { scrollWheelZoom: false, zoomControl: false, attributionControl: false, worldCopyJump: false, minZoom: 1, maxZoom: 8 });
+      const map = L.map(canvas, { scrollWheelZoom: false, zoomControl: false, attributionControl: false, worldCopyJump: false, minZoom: 0, maxZoom: 8 });
       L.control.zoom({ position: 'bottomright' }).addTo(map);
       // No tiles. The countries are the map: a road map underneath a political map
       // only argues with it.
@@ -677,28 +677,45 @@ function drawWorldMap(card, kind) {
       const labels = worldLabels(L, map, geo, data, palette, focus);
       // The map is the shape of the world, and there is nothing beyond it to look at.
       map.setMaxBounds(layer.getBounds().pad(0.05));
-      if (focus) {
-        const target = layers.get(focus);
-        if (target) map.fitBounds(target.getBounds(), { padding: [24, 24], maxZoom: 5 });
-        else map.setView([20, 10], 2);
-      } else {
-        // The map opens on where the news is, not on the middle of the ocean.
-        const busy = [...layers.entries()]
-          .filter(([iso2]) => (data.countries[iso2]?.stories ?? 0) > 0)
-          .slice(0, 12)
-          .map(([, lyr]) => lyr.getBounds());
-        if (busy.length) {
-          const bounds = busy.reduce((acc, b) => acc.extend(b), L.latLngBounds([]));
-          map.fitBounds(bounds, { padding: [28, 28], maxZoom: 5 });
-          leaflet.maps.set(card, { map, layers, kind, data, busyBounds: bounds, updateLabels: labels.update });
-        } else {
-          map.setView([25, 15], 2);
-          leaflet.maps.set(card, { map, layers, kind, data, busyBounds: null, updateLabels: labels.update });
-        }
-        labels.update();
-        return;
+      // The map opens on where the news is, not on the middle of the ocean.
+      const busy = [...layers.entries()]
+        .filter(([iso2]) => (data.countries[iso2]?.stories ?? 0) > 0)
+        .slice(0, 12)
+        .map(([, lyr]) => lyr.getBounds());
+      const busyBounds = busy.length ? busy.reduce((acc, b) => acc.extend(b), L.latLngBounds([])) : null;
+      // The bounds of the world as a map of countries: every country but the ice,
+      // which would drag the frame down to the pole.
+      const worldBounds = L.latLngBounds([]);
+      for (const feature of geo.features) {
+        if (feature.properties.name === 'Antarctica') continue;
+        const [minLon, minLat, maxLon, maxLat] = feature.properties.bbox;
+        worldBounds.extend([minLat, minLon]);
+        worldBounds.extend([maxLat, maxLon]);
       }
-      leaflet.maps.set(card, { map, layers, kind, data, busyBounds: null, updateLabels: labels.update });
+      // What the map is framed on. The reader can change it, and the map is framed
+      // the same way again when it grows to the whole screen.
+      const drawn = { map, layers, kind, data, busyBounds, updateLabels: labels.update, framing: focus ? 'focus' : 'news' };
+      drawn.reframe = () => {
+        if (drawn.framing === 'focus') {
+          const target = layers.get(focus);
+          if (target) map.fitBounds(target.getBounds(), { padding: [24, 24], maxZoom: 5 });
+          else map.setView([20, 10], 2);
+          return;
+        }
+        if (drawn.framing === 'news' && busyBounds) {
+          // The zoom that fits the news, but never so far out that the world floats
+          // in the middle of the screen: a phone is narrower than the world, and it
+          // is better to fill the screen with the world than to float it in the sea.
+          const zoom = Math.min(5, Math.max(1, map.getBoundsZoom(busyBounds, false, [28, 28])));
+          map.setView(busyBounds.getCenter(), zoom);
+          return;
+        }
+        // The whole world, in one frame: on a narrow screen the world is smaller
+        // than the screen, and the map says so by showing all of it.
+        map.fitBounds(worldBounds, { padding: [12, 12] });
+      };
+      drawn.reframe();
+      leaflet.maps.set(card, drawn);
       labels.update();
     })
     .catch(() => {
@@ -733,9 +750,11 @@ document.addEventListener('click', (ev) => {
   const drawn = card ? leaflet.maps.get(card) : null;
   if (!drawn) return;
   if (button.dataset.worldFrame === 'all') {
-    drawn.map.setView([25, 15], 2);
+    drawn.framing = 'all';
+    drawn.reframe?.();
     return;
   }
+  drawn.framing = 'news';
   if (drawn.busyBounds) drawn.map.fitBounds(drawn.busyBounds, { padding: [28, 28], maxZoom: 5 });
 });
 
@@ -813,6 +832,8 @@ function setFullscreen(card, on) {
   // The map has a new size: the tiles and the popups have to follow it.
   requestAnimationFrame(() => {
     drawn.map.invalidateSize();
+    // The map has a new shape to fill, so it is framed the same way again.
+    drawn.reframe?.();
     fitPopups(card, drawn);
   });
 }
@@ -850,6 +871,7 @@ window.addEventListener('resize', () => {
     const drawn = leaflet.maps.get(card);
     if (!drawn) continue;
     drawn.map.invalidateSize();
+    if (card.classList.contains('fullscreen')) drawn.reframe?.();
     fitPopups(card, drawn);
   }
 });

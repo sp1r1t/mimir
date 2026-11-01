@@ -245,6 +245,12 @@ whichever that colour can carry. A name appears only when the country is big eno
 screen to hold it, and no two names touch. Zooming in uncovers more names; panning
 never makes one blink away.
 
+The map is framed on something, and it says which: on where the reader's news is, or on
+the whole world. The whole world is shown whole, even when it is smaller than the
+screen — a phone is narrower than the world, and a map that cuts the ends off to look
+bigger says something the reader did not ask for. The frame is kept when the map grows
+to the whole screen, so full screen is the same map, larger, and not a different one.
+
 **What it means for later work.** A map that carries data is drawn from the data's own
 shapes. Tiles belong to maps that show where something happened, not to maps that say
 what a place is.

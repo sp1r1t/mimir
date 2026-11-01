@@ -48,9 +48,9 @@ export function layout(app: App, opts: { title: string; nav: NavKey; body: SafeH
 <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
 <title>${opts.title} · Mimir</title>
-<link rel="stylesheet" href="/static/app.css?v=reader-system-14">
+<link rel="stylesheet" href="/static/app.css?v=reader-system-15">
 <script>try{var f=+localStorage.getItem('mimir-font-size');if(f>=12&&f<=22)document.documentElement.style.fontSize=f+'px'}catch(e){}</script>
-<script src="/static/app.js?v=reader-system-14" defer></script>
+<script src="/static/app.js?v=reader-system-15" defer></script>
 </head>
 <body class="view-${opts.nav}" ${liveKind ? html`data-live="${liveKind}" data-live-version="${liveVersion}"` : null}>
 <a class="skip-link" href="#main-content">Skip to content</a>

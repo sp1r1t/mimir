@@ -332,6 +332,12 @@ its name, written where a cartographer would put it, and a name appears only whe
 country is big enough on screen to hold it. Zoom in and more names appear; pan and
 none of them moves or blinks away.
 
+**What the map is framed on.** Two buttons under the map say which: **Your news** opens
+the map on the countries your news is about, and **All world** shows the whole world at
+once — on a phone the world is smaller than the screen, and the map says so by showing
+all of it rather than cutting the ends off. The frame is kept when the map grows to the
+whole screen, so **Full screen** shows the same map, larger.
+
 **Moving now.** Under the map is the list of the countries worth a look, ordered by how
 loud they are: an election is happening now, an election is coming within thirty days,
 the news says the snapshot may be out of date, or the country is simply where your

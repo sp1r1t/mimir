@@ -367,7 +367,10 @@ ul.plain li { margin: .3rem 0; }
 .map-panel[hidden] { display: none; }
 .map-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .map-head h3 { margin: 0; }
-.map-canvas { height: 17rem; border: 1px solid var(--border); border-radius: var(--radius); margin: .25rem 0 .75rem; background: var(--bg); }
+/* The map library draws its panes at a high z-index, so the canvas gets a stacking
+   context of its own. Without one the panes escape into the page and paint over the
+   sticky header as soon as the map scrolls up behind it. */
+.map-canvas { position: relative; z-index: 0; height: 17rem; border: 1px solid var(--border); border-radius: var(--radius); margin: .25rem 0 .75rem; background: var(--bg); }
 .map-places { list-style: none; margin: .5rem 0; padding: 0; display: flex; flex-direction: column; }
 .map-places .place { display: flex; flex-wrap: wrap; gap: .15rem .6rem; align-items: baseline; padding: .4rem 0; border-top: 1px solid var(--border); }
 .map-places .place:first-child { border-top: 0; }
