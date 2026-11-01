@@ -46,7 +46,7 @@ src/summaries/        SummaryProvider interface, MiniMax and mock providers, pro
 src/terms/            term prompt and validation, Wikipedia client, glossary markup, word count
 src/repo/             article/source/feedback/statistics persistence
 src/web/              Fastify routes, server-rendered pages, metrics
-src/world/            world snapshot: positions, elections, placeholder rows, the news activity of a country
+src/world/            world snapshot: the Wikidata reader, the governments it finds, the news activity of a country
 src/pipeline.ts       extraction/classification/recovery coordination
 migrations/           numbered transactional SQLite migrations and FTS5 triggers
 config/               initial feed subscriptions and explicit interest defaults

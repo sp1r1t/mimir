@@ -1,9 +1,7 @@
 import type { DB } from '../db/database.js';
 import type { Clock } from '../util/time.js';
 import { iso } from '../util/time.js';
-import { PLACEHOLDERS, PLACEHOLDER_SOURCE } from './placeholders.js';
 import {
-  POSITION_SCORE,
   daysUntil,
   electionStanding,
   type CountrySnapshot,
@@ -106,45 +104,75 @@ export class WorldRepository {
   ) {}
 
   /**
-   * Write the placeholder rows when the snapshot is empty, so the map has something
-   * on it before the fetch job exists. It never overwrites anything: a real snapshot
-   * is left alone.
+   * Write a fresh reading of the world.
+   *
+   * Every country the fetch read is written over the row it had before, so the
+   * snapshot always says what the last fetch found. Two rows are left alone: a
+   * country a person set by hand is theirs, and a country the fetch could not
+   * place keeps whatever it knew, marked as possibly out of date.
    */
-  seedPlaceholders(): number {
-    const count = this.db.prepare('SELECT COUNT(*) AS n FROM world_snapshot').get() as { n: number };
-    if (count.n > 0) return 0;
-    const now = iso(this.clock());
+  saveSnapshots(snapshots: CountrySnapshot[]): number {
     const insert = this.db.prepare(`INSERT INTO world_snapshot
       (country_iso2, country_name, head_of_state, head_of_government, party, coalition, ideology,
        position, score, ideology_source, source_url, next_election_date, next_election_kind,
        election_source, state, note, fetched_at, updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(country_iso2) DO UPDATE SET
+        country_name = excluded.country_name,
+        head_of_state = excluded.head_of_state,
+        head_of_government = excluded.head_of_government,
+        party = excluded.party,
+        coalition = excluded.coalition,
+        ideology = excluded.ideology,
+        position = excluded.position,
+        score = excluded.score,
+        ideology_source = excluded.ideology_source,
+        source_url = excluded.source_url,
+        next_election_date = excluded.next_election_date,
+        next_election_kind = excluded.next_election_kind,
+        election_source = excluded.election_source,
+        state = excluded.state,
+        note = excluded.note,
+        fetched_at = excluded.fetched_at,
+        updated_at = excluded.updated_at
+      WHERE world_snapshot.state <> 'manual'`);
     const write = this.db.transaction(() => {
-      for (const p of PLACEHOLDERS) {
+      for (const s of snapshots) {
         insert.run(
-          p.iso2,
-          p.name,
-          p.headOfState ?? null,
-          p.headOfGovernment ?? null,
-          p.party ?? null,
-          JSON.stringify(p.coalition ?? []),
-          p.ideology ?? null,
-          p.position,
-          POSITION_SCORE[p.position],
-          PLACEHOLDER_SOURCE,
-          null,
-          p.nextElection ?? null,
-          p.nextElectionKind ?? null,
-          p.nextElection ? PLACEHOLDER_SOURCE : null,
-          p.state ?? 'fresh',
-          p.note ?? null,
-          now,
-          now,
+          s.iso2,
+          s.name,
+          s.headOfState,
+          s.headOfGovernment,
+          s.party,
+          JSON.stringify(s.coalition),
+          s.ideology,
+          s.position,
+          s.score,
+          s.ideologySource,
+          s.sourceUrl,
+          s.nextElectionDate,
+          s.nextElectionKind,
+          s.electionSource,
+          s.state,
+          s.note,
+          s.fetchedAt,
+          s.updatedAt,
         );
       }
     });
     write();
-    return PLACEHOLDERS.length;
+    return snapshots.length;
+  }
+
+  /**
+   * Mark every row as possibly out of date. Used when a fetch fails: the rows are
+   * the last good ones, and the reader should know they are old.
+   */
+  markStale(): number {
+    const now = iso(this.clock());
+    return this.db
+      .prepare(`UPDATE world_snapshot SET state = 'stale', updated_at = ? WHERE state NOT IN ('manual', 'stale')`)
+      .run(now).changes;
   }
 
   /** Every country Mimir has a row for. */
@@ -164,6 +192,44 @@ export class WorldRepository {
       .prepare('SELECT COUNT(*) AS n, MAX(updated_at) AS updated FROM world_snapshot')
       .get() as { n: number; updated: string | null };
     return { updatedAt: row.updated, countries: row.n };
+  }
+
+  /** Write down what a reading of the world found. */
+  recordFetch(entry: { startedAt: string; finishedAt?: string; countries?: number; unmapped?: string[]; error?: string }): void {
+    this.db
+      .prepare(
+        `INSERT INTO world_fetch_log (started_at, finished_at, countries, unmapped, error)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(
+        entry.startedAt,
+        entry.finishedAt ?? null,
+        entry.countries ?? 0,
+        JSON.stringify(entry.unmapped ?? []),
+        entry.error ?? null,
+      );
+  }
+
+  /** The last reading of the world, and whether it worked. */
+  lastFetch(): { startedAt: string; finishedAt: string | null; countries: number; unmapped: string[]; error: string | null } | null {
+    const row = this.db
+      .prepare('SELECT started_at, finished_at, countries, unmapped, error FROM world_fetch_log ORDER BY id DESC LIMIT 1')
+      .get() as { started_at: string; finished_at: string | null; countries: number; unmapped: string; error: string | null } | undefined;
+    if (!row) return null;
+    let unmapped: string[] = [];
+    try {
+      const parsed: unknown = JSON.parse(row.unmapped);
+      if (Array.isArray(parsed)) unmapped = parsed.map((c) => String(c));
+    } catch {
+      unmapped = [];
+    }
+    return {
+      startedAt: row.started_at,
+      finishedAt: row.finished_at,
+      countries: row.countries,
+      unmapped,
+      error: row.error,
+    };
   }
 
   /**

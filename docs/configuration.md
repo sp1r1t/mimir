@@ -132,6 +132,13 @@ Key settings:
 | `WIKIPEDIA_USER_AGENT` | `Mimir/1.0 (self-hosted news reader; https://mimir.invalid)` | How Wikipedia is asked; it must carry an address |
 | `WIKIPEDIA_TIMEOUT_MS` | `15000` | Timeout of one Wikipedia request |
 | `WIKIPEDIA_MIN_INTERVAL_MS` | `500` | Minimum gap between two Wikipedia requests |
+| `WORLD_ENABLED` | `true` | Fill the world map from Wikidata |
+| `WORLD_REFRESH_HOURS` | `24` | How often the world snapshot is read again |
+| `WIKIDATA_URL` | `https://www.wikidata.org` | Wikidata item API |
+| `WIKIDATA_QUERY_URL` | `https://query.wikidata.org/sparql` | Wikidata query service |
+| `WIKIDATA_USER_AGENT` | `Mimir/1.0 (self-hosted news reader; https://mimir.invalid)` | How Wikidata is asked; it must carry an address |
+| `WIKIDATA_TIMEOUT_MS` | `30000` | Timeout of one Wikidata request |
+| `WIKIDATA_MIN_INTERVAL_MS` | `700` | Minimum gap between two Wikidata requests |
 | `LOG_LEVEL` | `info` | JSON log verbosity |
 | `RETENTION_FETCH_LOG_DAYS` | `30` | Fetch-history retention |
 | `RETENTION_JOBS_DAYS` | `14` | Completed-job retention |

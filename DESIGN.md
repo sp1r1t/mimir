@@ -249,6 +249,48 @@ never makes one blink away.
 shapes. Tiles belong to maps that show where something happened, not to maps that say
 what a place is.
 
+### D12 — The world map is filled in from Wikidata, and says nothing it cannot support
+
+**What.** Every row of the world map is read from Wikidata: the head of state, the head
+of government, the party or parties in office, where that party stands on the
+left–right axis, and the next election. A country whose government Wikidata cannot
+place on the axis is shown as unknown, and a government that does not stand on the axis
+at all is shown outside it.
+
+**Why.** The map has to answer a political question, and it can only answer it with a
+source. Wikidata is the one public source that states, for every country, who holds
+which office, when their term began and ended, which party they belong to and where
+that party stands — and it states it as data rather than as prose, so it can be read
+again the same way tomorrow. It is also incomplete, and the incompleteness is the
+point: a party that says nothing about where it stands has not been placed, and
+filling that gap from Mimir's own guesses would put a claim on the map that nothing
+supports. The reader has to be able to ask "where does this come from?" of every row,
+and the answer has to be a place they can go and look.
+
+**How it shows.** Each row carries the Wikidata item it was read from and the moment
+it was read, and the country page shows both. The axis is Wikidata's own: a party
+carries an alignment, an alignment hangs off the political spectrum as a tree, and the
+narrowest point of that tree the party reaches is the one that says the most. Ideologies
+are usually not on that tree, so they are read as words — a table of what each one
+usually means — and where Wikidata does place an ideology on the spectrum, that
+placement wins over the table. A government that says it belongs to nobody is not a
+government with no position; it is a government whose position is not written down,
+and it says so. A party that calls itself authoritarian, monarchist or statist is not
+standing to the left or the right of anyone, and is shown outside the axis with that
+said in words.
+
+Which party is in office depends on the shape of the country. In a parliamentary
+system the head of state is a figurehead, and their party is neither the government
+nor a partner of it. In a presidential system the head of state governs, and the prime
+minister's party sits with them. A country that calls itself both is read as
+parliamentary, which is the safer of the two: a party that is only the president's is
+not a government.
+
+**What it means for later work.** The map is a reading, not an opinion. A second source
+can be added — and should be, for the countries the first one is silent about — but it
+is added as another reading, with its own name on the row, and never as a patch that
+hides the gap.
+
 ---
 
 ## The visual language

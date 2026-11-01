@@ -167,14 +167,13 @@ export function worldPage(app: App, view: WorldView, now: Date): SafeHtml {
   const countries = world.list();
   const moving = world.moving(now);
   const freshness = world.freshness();
-  const placeholder = countries.length > 0 && countries.every((c) => c.ideologySource === 'placeholder');
   const body = html`${pageHeading(
     'World',
     'Who governs each country, and where the news is moving.',
   )}
-  ${placeholder
-    ? html`<p class="badge-line"><span class="badge promo">Placeholder data</span>
-        <span class="muted">These rows are scaffolding. They are replaced by the fetch job, which has not run yet.</span></p>`
+  ${countries.length === 0
+    ? html`<p class="badge-line"><span class="badge promo">No snapshot yet</span>
+        <span class="muted">Mimir has not read the world yet. The map fills in when the first reading is done.</span></p>`
     : null}
   <p class="muted small">${countries.length} countries · snapshot read ${freshness.updatedAt ? freshness.updatedAt.slice(0, 16).replace('T', ' ') + ' UTC' : 'never'}</p>
 

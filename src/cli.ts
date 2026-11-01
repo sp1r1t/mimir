@@ -7,6 +7,11 @@ import { JobQueue } from './jobs/queue.js';
 import { CLASSIFY } from './pipeline.js';
 import { ProfileRepository } from './profile/repository.js';
 import { formatReport, runReplay } from './stories/replay.js';
+import { systemClock } from './util/time.js';
+import { mapCountries } from './world/countries.js';
+import { WorldFetcher } from './world/fetch.js';
+import { WorldRepository } from './world/repository.js';
+import { Wikidata } from './world/wikidata.js';
 
 const USAGE = `Usage: node dist/cli.js <command>
 
@@ -17,6 +22,8 @@ Commands:
   repair-content       Clean stored article HTML without downloading pages,
                        and queue classification where that text changed
   status               Print article, source, and job counts
+  world fetch          Read the world's governments from Wikidata and write them
+                       into the snapshot
   replay [--json]      Replay the recorded matching decisions and report how well the
                        similarity score tells same-story pairs from different ones
 `;
@@ -85,6 +92,39 @@ async function main(): Promise<void> {
       try {
         const report = runReplay(db, { threshold: config.stories.minSimilarity });
         console.log(args.includes('--json') ? JSON.stringify(report, null, 2) : formatReport(report));
+      } finally {
+        db.close();
+      }
+      break;
+    }
+    case 'world': {
+      if (arg !== 'fetch') {
+        process.stdout.write(USAGE);
+        process.exit(1);
+      }
+      const db = openDatabase(config.dbPath);
+      try {
+        const world = new WorldRepository(db, systemClock);
+        const wikidata = new Wikidata(config.world.wikidata);
+        const started = new Date();
+        process.stdout.write('Reading the world from Wikidata…\n');
+        const result = await new WorldFetcher({
+          wikidata,
+          countries: mapCountries(),
+          now: started,
+        }).run();
+        const written = world.saveSnapshots(result.snapshots);
+        world.recordFetch({
+          startedAt: started.toISOString(),
+          finishedAt: new Date().toISOString(),
+          countries: written,
+          unmapped: result.unmapped,
+        });
+        const known = result.snapshots.filter((s) => s.position !== 'unknown').length;
+        console.log(`Wrote ${written} countries to the world snapshot; ${known} of them sit on the axis.`);
+        if (result.unmapped.length) {
+          console.log(`Not sovereign states in Wikidata: ${result.unmapped.join(', ')}`);
+        }
       } finally {
         db.close();
       }

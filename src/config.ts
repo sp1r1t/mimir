@@ -80,6 +80,23 @@ const EnvSchema = z.object({
   TILE_URL: z.string().min(1).default('https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
   TILE_ATTRIBUTION: z.string().default('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'),
 
+  WORLD_ENABLED: bool.default(true),
+  // How often the world snapshot is read again. Wikidata changes slowly, and it
+  // is a public service that asks to be treated politely.
+  WORLD_REFRESH_HOURS: int(24, 1),
+  WIKIDATA_URL: z.string().url().default('https://www.wikidata.org'),
+  WIKIDATA_QUERY_URL: z.string().url().default('https://query.wikidata.org/sparql'),
+  // Wikidata asks who is asking, and answers a stranger with less. The address
+  // below is the reserved ".invalid" one, because a self-hosted reader has no
+  // public homepage to point at; set WIKIDATA_USER_AGENT to your own address to
+  // be reachable.
+  WIKIDATA_USER_AGENT: z
+    .string()
+    .min(1)
+    .default('Mimir/1.0 (self-hosted news reader; https://mimir.invalid)'),
+  WIKIDATA_TIMEOUT_MS: int(30000, 1000),
+  WIKIDATA_MIN_INTERVAL_MS: int(700, 0),
+
   TERMS_ENABLED: bool.default(true),
   TERMS_MAX_ARTICLES: int(12, 1),
   TERMS_MAX_INPUT_CHARS: int(40000, 2000),
@@ -195,6 +212,17 @@ export interface AppConfig {
     maxOutputTokens: number;
     wikipedia: {
       baseUrl: string;
+      userAgent: string;
+      timeoutMs: number;
+      minIntervalMs: number;
+    };
+  };
+  world: {
+    enabled: boolean;
+    refreshHours: number;
+    wikidata: {
+      baseUrl: string;
+      queryUrl: string;
       userAgent: string;
       timeoutMs: number;
       minIntervalMs: number;
@@ -317,6 +345,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         userAgent: e.WIKIPEDIA_USER_AGENT,
         timeoutMs: e.WIKIPEDIA_TIMEOUT_MS,
         minIntervalMs: e.WIKIPEDIA_MIN_INTERVAL_MS,
+      },
+    },
+    world: {
+      enabled: e.WORLD_ENABLED,
+      refreshHours: e.WORLD_REFRESH_HOURS,
+      wikidata: {
+        baseUrl: e.WIKIDATA_URL,
+        queryUrl: e.WIKIDATA_QUERY_URL,
+        userAgent: e.WIKIDATA_USER_AGENT,
+        timeoutMs: e.WIKIDATA_TIMEOUT_MS,
+        minIntervalMs: e.WIKIDATA_MIN_INTERVAL_MS,
       },
     },
     minimax: {

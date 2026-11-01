@@ -344,11 +344,19 @@ next votes and in how many days, whether Mimir has noticed that the snapshot may
 of date, and the stories that name it. The stories are the reader's own: they are the
 ones Mimir ranked for you.
 
-**Where the rows come from.** For now they are placeholders: the page says so in as many
-words, and every row carries its source and the date it was read. The fetch job that
-reads Wikipedia and Wikidata and writes the real snapshot is not built yet. When it is,
-the same rows will carry a real source, and the news will be able to mark a row out of
-date.
+**Where the rows come from.** Each row is read from Wikidata: the head of state, the
+head of government, the party or parties in office, the next election and the date it
+is due. Every row carries its source and the date it was read, and the news can mark a
+row out of date when it gets old. Wikidata does not always say enough: a country whose
+governing party says nothing about where it stands is shown as unknown rather than
+guessed at, and a one-party state or an absolute monarchy is shown outside the axis
+altogether, because its government does not stand on it. So is a government whose own
+party describes it as authoritarian, monarchist or statist.
+
+**Which party is in office.** In a parliamentary system the government is the head of
+government and the head of state is a figurehead, so their party is neither the
+government nor a partner of it. In a presidential system the head of state governs, and
+the prime minister's party sits with them.
 
 **Without JavaScript.** The map needs JavaScript, as the story map does. Everything else
 does not: the moving list, the country table and the country page are all server

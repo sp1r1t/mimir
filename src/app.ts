@@ -26,10 +26,15 @@ import { MiniMaxProvider } from './summaries/minimax.js';
 import { MockSummaryProvider } from './summaries/mock.js';
 import { DisabledSummaryProvider, type SummaryProvider } from './summaries/provider.js';
 import { systemClock, type Clock } from './util/time.js';
+import { WorldPipeline } from './world/pipeline.js';
 import { WorldRepository } from './world/repository.js';
+import { Wikidata, type WikidataReader } from './world/wikidata.js';
 
 /** How often the ordinary words of the glossary are counted again. */
 const VOCABULARY_REFRESH_MS = 10 * 60_000;
+
+/** How often Mimir asks whether the world snapshot has grown old. */
+const WORLD_REFRESH_CHECK_MS = 60 * 60_000;
 
 export interface App {
   config: AppConfig;
@@ -46,6 +51,7 @@ export interface App {
   stories: StoryRepository;
   storyPipeline: StoryPipeline;
   world: WorldRepository;
+  worldPipeline: WorldPipeline;
   summaries: SummaryProvider;
   scheduler: FeedScheduler;
   startedAt: Date;
@@ -71,6 +77,7 @@ export function createApp(
     places?: SummaryProvider;
     terms?: SummaryProvider;
     wikipedia?: Encyclopedia;
+    wikidata?: WikidataReader;
   } = {},
 ): App {
   const clock = overrides.clock ?? systemClock;
@@ -114,14 +121,14 @@ export function createApp(
   const geocoder = overrides.geocoder ?? new NominatimGeocoder(config.places.geocoder);
   // The encyclopedia explains the terms; it needs no key, only a request at a time.
   const wikipedia = overrides.wikipedia ?? new Wikipedia(config.terms.wikipedia);
+  // Wikidata is read the same way: no key, one request at a time, and a
+  // User-Agent that says who is asking.
+  const wikidata = overrides.wikidata ?? new Wikidata(config.world.wikidata);
 
   seed(db, config, sources, profiles, log);
-  // The world snapshot starts empty. Until the fetch job exists, it holds the
-  // placeholder rows, and the page says so.
-  const seeded = world.seedPlaceholders();
-  if (seeded) log.info({ countries: seeded }, 'seeded the placeholder world snapshot');
 
   const storyPipeline = new StoryPipeline({ db, config, queue, stories, profiles, matcher, summaries, places, geocoder, wikipedia, terms, log, clock });
+  const worldPipeline = new WorldPipeline({ config, queue, world, wikidata, log, clock });
   const pipeline = new Pipeline({
     db, config, queue, articles, sources, profiles, classifier, extractor, log, clock,
     onClassified: (id) => storyPipeline.onClassified(id),
@@ -148,6 +155,7 @@ export function createApp(
 
   let started = false;
   let vocabularyTimer: NodeJS.Timeout | null = null;
+  let worldTimer: NodeJS.Timeout | null = null;
   // The news grows, and so does what it writes in lower case: the names that are
   // ordinary words are counted again every now and then.
   const refreshVocabulary = (): void => {
@@ -157,6 +165,14 @@ export function createApp(
     } catch (err) {
       log.warn({ err: err instanceof Error ? err.message : String(err) }, 'could not count the ordinary words of the glossary');
     }
+  };
+  // The world changes when a country votes, and Wikidata is where Mimir reads
+  // that from. The snapshot is read again when it has grown old enough.
+  const refreshWorld = (): void => {
+    if (!config.world.enabled) return;
+    const { updatedAt } = world.freshness();
+    const due = !updatedAt || Date.now() - Date.parse(updatedAt) >= config.world.refreshHours * 3_600_000;
+    if (due) worldPipeline.enqueue({ priority: 0 });
   };
   return {
     config,
@@ -173,6 +189,7 @@ export function createApp(
     stories,
     storyPipeline,
     world,
+    worldPipeline,
     summaries,
     scheduler,
     startedAt: clock(),
@@ -185,10 +202,14 @@ export function createApp(
       if (!summaries.isConfigured()) log.warn({ hint: summaries.configurationHint() }, 'executive summaries disabled');
       pipeline.start();
       storyPipeline.start();
+      worldPipeline.start();
       scheduler.start();
       refreshVocabulary();
       vocabularyTimer = setInterval(refreshVocabulary, VOCABULARY_REFRESH_MS);
       vocabularyTimer.unref?.();
+      refreshWorld();
+      worldTimer = setInterval(refreshWorld, WORLD_REFRESH_CHECK_MS);
+      worldTimer.unref?.();
     },
     async stop() {
       if (!started) return;
@@ -197,8 +218,12 @@ export function createApp(
         clearInterval(vocabularyTimer);
         vocabularyTimer = null;
       }
+      if (worldTimer) {
+        clearInterval(worldTimer);
+        worldTimer = null;
+      }
       await scheduler.stop();
-      await Promise.all([pipeline.stop(), storyPipeline.stop()]);
+      await Promise.all([pipeline.stop(), storyPipeline.stop(), worldPipeline.stop()]);
     },
   };
 }

@@ -15,6 +15,7 @@ import type { StoryMatcher } from '../src/stories/matcher.js';
 import type { SummaryProvider } from '../src/summaries/provider.js';
 import type { Encyclopedia } from '../src/terms/wikipedia.js';
 import type { Clock } from '../src/util/time.js';
+import type { WikidataReader } from '../src/world/wikidata.js';
 
 export const FIXTURES = join(import.meta.dirname, 'fixtures');
 
@@ -38,6 +39,9 @@ export function testConfig(dataDir: string, env: Record<string, string> = {}): A
     FEED_SCHEDULER_TICK_MS: '100000',
     EXTRACT_ENABLED: 'false',
     SUMMARY_PROVIDER: 'none',
+    // The world snapshot is read from Wikidata, which is a public service. Tests
+    // do not call it unless they say so.
+    WORLD_ENABLED: 'false',
     ...env,
   });
 }
@@ -59,6 +63,7 @@ export function makeApp(
     places?: SummaryProvider;
     terms?: SummaryProvider;
     wikipedia?: Encyclopedia;
+    wikidata?: WikidataReader;
     clock?: Clock;
     dir?: string;
   } = {},
@@ -74,6 +79,7 @@ export function makeApp(
     places: opts.places,
     terms: opts.terms,
     wikipedia: opts.wikipedia,
+    wikidata: opts.wikidata,
     clock: opts.clock,
     db: openDatabase(config.dbPath),
   });

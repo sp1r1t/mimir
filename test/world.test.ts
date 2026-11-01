@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { DB } from '../src/db/database.js';
 import { buildServer } from '../src/web/server.js';
-import { daysUntil, electionStanding, POSITION_SCORE } from '../src/world/schema.js';
+import { daysUntil, electionStanding, POSITION_SCORE, type CountrySnapshot } from '../src/world/schema.js';
 import { makeApp, type TestApp } from './helpers.js';
 
 let app: TestApp | null = null;
@@ -30,19 +30,90 @@ function storyWithPlace(db: DB, id: number, headline: string, iso2: string, at: 
   ).run(id, iso2.toUpperCase(), iso2.toLowerCase(), at);
 }
 
+/** One country as a fetch would leave it. */
+function snapshot(iso2: string, over: Partial<CountrySnapshot> = {}): CountrySnapshot {
+  return {
+    iso2,
+    name: 'Serbia',
+    headOfState: 'President Aleksandar Vučić',
+    headOfGovernment: 'Prime Minister Đuro Macut',
+    party: 'Serbian Progressive Party',
+    coalition: [],
+    ideology: 'social conservatism',
+    position: 'centre-right',
+    score: 0.5,
+    ideologySource: 'Wikidata',
+    sourceUrl: `https://www.wikidata.org/wiki/Q${iso2}`,
+    nextElectionDate: '2026-12-14',
+    nextElectionKind: 'parliamentary',
+    electionSource: 'Wikidata',
+    state: 'fresh',
+    note: null,
+    fetchedAt: '2026-11-01T00:00:00.000Z',
+    updatedAt: '2026-11-01T00:00:00.000Z',
+    ...over,
+  };
+}
+
 describe('the world snapshot', () => {
-  it('starts with the placeholder rows and keeps them', async () => {
+  it('starts empty and fills up when a fetch is written', async () => {
     app = makeApp();
     const world = app.app.world;
-    const countries = world.list();
-    expect(countries.length).toBeGreaterThan(50);
-    const serbia = world.get('RS');
-    expect(serbia).not.toBeNull();
-    expect(serbia!.position).toBe('right');
-    expect(serbia!.ideologySource).toBe('placeholder');
-    // The seeding happens once: a second call changes nothing.
-    expect(world.seedPlaceholders()).toBe(0);
-    expect(world.list().length).toBe(countries.length);
+    expect(world.list()).toHaveLength(0);
+    expect(world.get('RS')).toBeNull();
+
+    const written = world.saveSnapshots([snapshot('RS')]);
+    expect(written).toBe(1);
+    expect(world.list()).toHaveLength(1);
+    expect(world.get('RS')!.party).toBe('Serbian Progressive Party');
+    expect(world.get('RS')!.position).toBe('centre-right');
+  });
+
+  it('writes a new reading over the old one', async () => {
+    app = makeApp();
+    const world = app.app.world;
+    world.saveSnapshots([snapshot('RS', { party: 'Old Party', position: 'left', score: -1 })]);
+    world.saveSnapshots([snapshot('RS', { party: 'New Party', position: 'right', score: 1 })]);
+    const row = world.get('RS')!;
+    expect(row.party).toBe('New Party');
+    expect(row.position).toBe('right');
+    expect(world.list()).toHaveLength(1);
+  });
+
+  it('leaves a row a person set by hand alone', async () => {
+    app = makeApp();
+    const world = app.app.world;
+    world.saveSnapshots([snapshot('RS', { state: 'manual', party: 'Set by hand' })]);
+    world.saveSnapshots([snapshot('RS', { party: 'Serbian Progressive Party' })]);
+    expect(world.get('RS')!.party).toBe('Set by hand');
+    expect(world.get('RS')!.state).toBe('manual');
+  });
+
+  it('says so when the last reading did not work', async () => {
+    app = makeApp();
+    const world = app.app.world;
+    world.saveSnapshots([snapshot('RS')]);
+    const marked = world.markStale();
+    expect(marked).toBe(1);
+    expect(world.get('RS')!.state).toBe('stale');
+    // The row itself is still there: it is the last good one.
+    expect(world.get('RS')!.party).toBe('Serbian Progressive Party');
+  });
+
+  it('writes down what each reading found', async () => {
+    app = makeApp();
+    const world = app.app.world;
+    expect(world.lastFetch()).toBeNull();
+    world.recordFetch({
+      startedAt: '2026-11-01T00:00:00.000Z',
+      finishedAt: '2026-11-01T00:03:00.000Z',
+      countries: 168,
+      unmapped: ['AQ', 'EH'],
+    });
+    const last = world.lastFetch()!;
+    expect(last.countries).toBe(168);
+    expect(last.unmapped).toEqual(['AQ', 'EH']);
+    expect(last.error).toBeNull();
   });
 
   it('counts the news that touches a country', async () => {
@@ -61,6 +132,10 @@ describe('the world snapshot', () => {
 
   it('puts a country with an election at the top of the moving list', async () => {
     app = makeApp();
+    app.app.world.saveSnapshots([
+      snapshot('US', { name: 'United States', nextElectionDate: '2026-11-03', nextElectionKind: 'presidential' }),
+      snapshot('RS', { name: 'Serbia', nextElectionDate: '2027-06-01' }),
+    ]);
     const now = new Date('2026-11-01T00:00:00.000Z');
     const moving = app.app.world.moving(now);
     const first = moving[0];
@@ -83,8 +158,8 @@ describe('the world page', () => {
     // The map can be framed on the news or on the whole world.
     expect(res.body).toContain('data-world-frame="news"');
     expect(res.body).toContain('data-world-frame="all"');
-    // The reader is told that the rows are scaffolding.
-    expect(res.body).toContain('Placeholder data');
+    // Nothing is claimed to be there before it has been read.
+    expect(res.body).toContain('No snapshot yet');
   });
 
   it('gives the fill one meaning at a time', async () => {
@@ -100,13 +175,14 @@ describe('the world page', () => {
 
   it('sends the map the countries and what it knows about them', async () => {
     app = makeApp();
+    app.app.world.saveSnapshots([snapshot('RS')]);
     server = buildServer(app.app);
     const res = await server.inject({ url: '/world' });
     const match = res.body.match(/<script type="application\/json" data-map-data>([\s\S]*?)<\/script>/);
     expect(match).not.toBeNull();
     const data = JSON.parse(match![1]!.replace(/\\u003c/g, '<'));
     expect(data.view).toBe('politics');
-    expect(data.countries.RS.position).toBe('right');
+    expect(data.countries.RS.position).toBe('centre-right');
     expect(data.countries.RS.nextElection).toBe('2026-12-14');
   });
 
@@ -127,6 +203,7 @@ describe('the world page', () => {
 
   it('shows a country with its government, its election and its news', async () => {
     app = makeApp();
+    app.app.world.saveSnapshots([snapshot('RS')]);
     server = buildServer(app.app);
     storyWithPlace(app.app.db, 7, 'Serbia goes to the polls', 'RS', '2026-10-31T00:00:00.000Z');
     const res = await server.inject({ url: '/world/rs' });
@@ -187,7 +264,8 @@ describe('the shapes of the map', () => {
   });
 });
 
-describe('the axis', () => {  it('puts the poles at the ends and nothing off the axis', () => {
+describe('the axis', () => {
+  it('puts the poles at the ends and nothing off the axis', () => {
     expect(POSITION_SCORE.left).toBe(-1);
     expect(POSITION_SCORE.right).toBe(1);
     expect(POSITION_SCORE.centre).toBe(0);
