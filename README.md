@@ -31,6 +31,8 @@ https://github.com/user-attachments/assets/cbdcc261-995a-4a2c-b643-e559c8ed61c4
   glossary.
 - **A map for every story.** Places a story is about are pinned on a map, so you can see
   where things happen.
+- **A world map.** One page that shows who governs every country, where your news is
+  coming from, and who votes next.
 - **As many feeds as you want.** Subscribe to anything with a feed. Mimir comes with a
   starter set, and everything else is generated for you.
 - **Yours to run.** One small container and one SQLite file. No external services except

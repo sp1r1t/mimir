@@ -22,6 +22,7 @@ import { sourceDetailPage, sourcesPage } from './pages/sources.js';
 import { statsPage } from './pages/stats.js';
 import { parseStoryFilters, relevantNewCount, resolveStoryQuery, storiesPage, storyPage } from './pages/stories.js';
 import { glossaryPage } from './pages/terms.js';
+import { countryPage, parseWorldView, worldPage } from './pages/world.js';
 
 type Body = Record<string, string | string[] | undefined>;
 type Query = Record<string, string | undefined>;
@@ -148,6 +149,38 @@ export function buildServer(app: App): FastifyInstance {
   server.get('/readyz', async (_req, reply) => reply.send(health(app)));
   server.get('/api/health', async (_req, reply) => reply.send(health(app)));
   server.get('/metrics', async (_req, reply) => reply.type('text/plain; version=0.0.4').send(metricsText(app)));
+
+  // ---- World ------------------------------------------------------------------
+  server.get('/world', async (req, reply) => {
+    const q = req.query as Query;
+    return send(reply, worldPage(app, parseWorldView(q.view), new Date()));
+  });
+
+  server.get('/world/:iso2', async (req, reply) => {
+    const iso2 = String((req.params as { iso2: string }).iso2 ?? '').toUpperCase();
+    if (!/^[A-Z]{2}$/.test(iso2)) return reply.code(404).send('Country not found');
+    return send(reply, countryPage(app, iso2, new Date()));
+  });
+
+  server.get('/api/world', async (req, reply) => {
+    const q = req.query as Query;
+    const view = parseWorldView(q.view);
+    const activity = app.world.activity(30);
+    return reply.send({
+      view,
+      countries: app.world.list().map((c) => ({
+        iso2: c.iso2,
+        name: c.name,
+        position: c.position,
+        score: c.score,
+        state: c.state,
+        nextElection: c.nextElectionDate,
+        electionKind: c.nextElectionKind,
+        stories: activity.get(c.iso2)?.stories ?? 0,
+        developments: activity.get(c.iso2)?.developments ?? 0,
+      })),
+    });
+  });
 
   // ---- Stories ---------------------------------------------------------------
   server.get('/', async (req, reply) => {

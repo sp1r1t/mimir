@@ -46,10 +46,12 @@ src/summaries/        SummaryProvider interface, MiniMax and mock providers, pro
 src/terms/            term prompt and validation, Wikipedia client, glossary markup, word count
 src/repo/             article/source/feedback/statistics persistence
 src/web/              Fastify routes, server-rendered pages, metrics
+src/world/            world snapshot: positions, elections, placeholder rows, the news activity of a country
 src/pipeline.ts       extraction/classification/recovery coordination
 migrations/           numbered transactional SQLite migrations and FTS5 triggers
 config/               initial feed subscriptions and explicit interest defaults
 public/               responsive CSS and progressive-enhancement JavaScript
+scripts/              the builder that downloads Natural Earth and writes the map shapes
 test/                 isolated integration and unit tests
 ```
 
@@ -95,3 +97,21 @@ Profile updates accept `{ "definition": { ... }, "changeNote": "...", "author": 
 web form. Article query parameters match the inbox URL (`q`, `source`, `category`,
 `min`, `max`, `date`, `from`, `to`, `status`, `saved`, `feedback`, `type`, `sort`,
 `page`, `size`); relevance bounds are 0–100.
+
+## The shapes of the world map
+
+The world map is drawn from vector shapes, not from tiles: `public/vendor/world/countries.json`
+holds the 110m country borders of Natural Earth, which are public domain, together with
+the name of each country, the point its name is written at, the box it covers and how
+big it is. `scripts/build-world-geo.ts` downloads the source, simplifies it and writes
+that file:
+
+```sh
+npx tsx scripts/build-world-geo.ts
+```
+
+The download is cached in `data/`, which is not in the repository. The shapes are
+deliberately coarse: a country is read as one mark, and the detail of a coastline at
+that scale is noise. A name is placed where Natural Earth's cartographers put it, and
+where that point falls in the sea it is moved onto the country's own land, so a name is
+always written on the colour of the country it belongs to.

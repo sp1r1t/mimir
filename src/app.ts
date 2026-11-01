@@ -26,6 +26,7 @@ import { MiniMaxProvider } from './summaries/minimax.js';
 import { MockSummaryProvider } from './summaries/mock.js';
 import { DisabledSummaryProvider, type SummaryProvider } from './summaries/provider.js';
 import { systemClock, type Clock } from './util/time.js';
+import { WorldRepository } from './world/repository.js';
 
 /** How often the ordinary words of the glossary are counted again. */
 const VOCABULARY_REFRESH_MS = 10 * 60_000;
@@ -44,6 +45,7 @@ export interface App {
   pipeline: Pipeline;
   stories: StoryRepository;
   storyPipeline: StoryPipeline;
+  world: WorldRepository;
   summaries: SummaryProvider;
   scheduler: FeedScheduler;
   startedAt: Date;
@@ -99,6 +101,7 @@ export function createApp(
     });
 
   const stories = new StoryRepository(db, clock);
+  const world = new WorldRepository(db, clock);
   const matcher =
     overrides.matcher ??
     new JevStoryMatcher({ apiKey: config.jev.apiKey, baseURL: config.jev.baseURL, model: config.jev.model, timeoutMs: config.jev.timeoutMs });
@@ -113,6 +116,10 @@ export function createApp(
   const wikipedia = overrides.wikipedia ?? new Wikipedia(config.terms.wikipedia);
 
   seed(db, config, sources, profiles, log);
+  // The world snapshot starts empty. Until the fetch job exists, it holds the
+  // placeholder rows, and the page says so.
+  const seeded = world.seedPlaceholders();
+  if (seeded) log.info({ countries: seeded }, 'seeded the placeholder world snapshot');
 
   const storyPipeline = new StoryPipeline({ db, config, queue, stories, profiles, matcher, summaries, places, geocoder, wikipedia, terms, log, clock });
   const pipeline = new Pipeline({
@@ -165,6 +172,7 @@ export function createApp(
     pipeline,
     stories,
     storyPipeline,
+    world,
     summaries,
     scheduler,
     startedAt: clock(),

@@ -436,7 +436,8 @@ function fitPopups(card, drawn) {
   const canvas = card.querySelector('[data-map-canvas]');
   if (!canvas) return;
   const max = popupMaxHeight(canvas);
-  for (const marker of drawn.markers) {
+  // The world map draws countries, not pins, so it has no popups to fit.
+  for (const marker of drawn.markers ?? []) {
     const popup = marker.getPopup();
     if (!popup) continue;
     popup.options.maxHeight = max;
@@ -444,10 +445,310 @@ function fitPopups(card, drawn) {
   }
 }
 
+// ---- The world map --------------------------------------------------------------
+// The countries are drawn as shapes, and the colour of a country means one thing at a
+// time: its government, the news about it, or its next election. The reader chooses
+// which, and the legend says what the colour means.
+
+const worldGeo = { promise: null };
+
+const WORLD_TOKENS = [
+  '--world-left', '--world-centre-left', '--world-centre', '--world-centre-right', '--world-right',
+  '--world-off-axis', '--world-unknown', '--world-other',
+  '--world-ink-1', '--world-ink-2', '--world-ink-3', '--world-ink-4',
+  '--world-election-now', '--world-election-planned', '--world-stroke',
+];
+
+const POSITION_TOKEN = {
+  left: '--world-left',
+  'centre-left': '--world-centre-left',
+  centre: '--world-centre',
+  'centre-right': '--world-centre-right',
+  right: '--world-right',
+  'not-on-axis': '--world-off-axis',
+  unknown: '--world-unknown',
+};
+
+/** The colours of the page, read from the stylesheet so both themes agree. */
+function worldPalette() {
+  const style = getComputedStyle(document.documentElement);
+  const palette = {};
+  for (const token of WORLD_TOKENS) palette[token] = style.getPropertyValue(token).trim() || '#8f8e86';
+  return palette;
+}
+
+function loadWorldGeo(url) {
+  if (!worldGeo.promise) {
+    worldGeo.promise = fetch(url)
+      .then((res) => {
+        if (!res.ok) throw new Error(`The world map could not be loaded (HTTP ${res.status})`);
+        return res.json();
+      })
+      .then((raw) => ({
+        type: 'FeatureCollection',
+        features: (raw.features || []).map((f) => ({
+          type: 'Feature',
+          properties: {
+            iso2: f.iso2,
+            name: f.name,
+            label: f.label ?? null,
+            center: f.center ?? null,
+            bbox: f.bbox ?? null,
+            size: f.size ?? 0,
+          },
+          geometry: f.geometry,
+        })),
+      }))
+      .catch((err) => {
+        worldGeo.promise = null;
+        throw err;
+      });
+  }
+  return worldGeo.promise;
+}
+
+/** How much of the news touches a country, as one of four steps. */
+function activityToken(stories) {
+  if (!stories) return '--world-unknown';
+  if (stories <= 2) return '--world-ink-1';
+  if (stories <= 5) return '--world-ink-2';
+  if (stories <= 10) return '--world-ink-3';
+  return '--world-ink-4';
+}
+
+/** Whether an election is happening now, or is only scheduled. */
+function electionToken(row, now) {
+  if (!row || !row.nextElection) return '--world-unknown';
+  const days = Math.round((Date.parse(row.nextElection) - now) / 86400000);
+  if (Number.isNaN(days)) return '--world-unknown';
+  if (days < -1) return '--world-unknown';
+  if (days <= 7) return '--world-election-now';
+  return '--world-election-planned';
+}
+
+function worldFill(iso2, data, palette, focus) {
+  const row = data.countries[iso2];
+  if (focus) {
+    if (iso2 !== focus) return palette['--world-other'];
+    return palette[POSITION_TOKEN[row?.position] || '--world-unknown'];
+  }
+  if (data.view === 'activity') return palette[activityToken(row?.stories ?? 0)];
+  if (data.view === 'elections') return palette[electionToken(row, Date.now())];
+  return palette[POSITION_TOKEN[row?.position] || '--world-unknown'];
+}
+
+// ---- The names on the map ---------------------------------------------------------
+// Every country carries its name, but a name needs room. A label is drawn when the
+// country is big enough on screen to hold it, and two labels never sit on top of
+// each other. Zooming in therefore uncovers more names, and panning never makes a
+// name blink away.
+
+const LABEL_SIZE = 11;
+const LABEL_CHAR = 6.4;
+
+/** The brightness of a colour, from 0 (black) to 1 (white). */
+function luminance(colour) {
+  const hex = /^#?([0-9a-f]{6})$/i.exec(String(colour).trim());
+  if (!hex) return 0.5;
+  const value = parseInt(hex[1], 16);
+  const channel = (byte) => {
+    const c = byte / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  const r = channel((value >> 16) & 255);
+  const g = channel((value >> 8) & 255);
+  const b = channel(value & 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Whether a name has room on the country it belongs to. */
+function labelFits(entry, zoom) {
+  if (!entry.bbox) return false;
+  // The width of the world in pixels at this zoom, and so the width of a degree.
+  const scale = (256 * Math.pow(2, zoom)) / 360;
+  const [minLon, minLat, maxLon, maxLat] = entry.bbox;
+  const width = (maxLon - minLon) * scale;
+  const midLat = Math.max(-80, Math.min(80, (minLat + maxLat) / 2));
+  const height = ((maxLat - minLat) * scale) / Math.cos((midLat * Math.PI) / 180);
+  return width >= entry.name.length * LABEL_CHAR * 0.6 && height >= LABEL_SIZE;
+}
+
+/**
+ * The labels of the world map. They are ordinary markers with no pin, so they move
+ * with the map and cost the reader nothing.
+ */
+function worldLabels(L, map, geo, data, palette, focus) {
+  const entries = [];
+  for (const feature of geo.features) {
+    const p = feature.properties;
+    const anchor = p.label || p.center;
+    if (!anchor) continue;
+    const icon = L.divIcon({
+      className: 'world-label-wrap',
+      html: `<span class="world-label"></span>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    });
+    const marker = L.marker([anchor[1], anchor[0]], { icon, interactive: false, keyboard: false });
+    entries.push({ iso2: p.iso2, name: p.name, bbox: p.bbox, size: p.size, anchor, marker });
+  }
+  L.layerGroup(entries.map((e) => e.marker)).addTo(map);
+
+  /** The labels that fit, without two of them touching. */
+  function update() {
+    const zoom = map.getZoom();
+    const candidates = entries.filter((e) => (focus && e.iso2 === focus) || labelFits(e, zoom));
+    candidates.sort((a, b) => (b.size || 0) - (a.size || 0));
+    const taken = [];
+    const shown = new Set();
+    for (const entry of candidates) {
+      // The place of the name on the map, which does not change while panning.
+      const point = map.project([entry.anchor[1], entry.anchor[0]], zoom);
+      const halfWidth = (entry.name.length * LABEL_CHAR) / 2 + 3;
+      const halfHeight = LABEL_SIZE / 2 + 2;
+      const box = { x1: point.x - halfWidth, x2: point.x + halfWidth, y1: point.y - halfHeight, y2: point.y + halfHeight };
+      if (taken.some((t) => box.x1 < t.x2 && box.x2 > t.x1 && box.y1 < t.y2 && box.y2 > t.y1)) continue;
+      taken.push(box);
+      shown.add(entry.iso2);
+    }
+    for (const entry of entries) {
+      const element = entry.marker.getElement();
+      if (!element) continue;
+      const visible = shown.has(entry.iso2);
+      element.style.display = visible ? '' : 'none';
+      if (!visible) continue;
+      const label = element.firstElementChild;
+      if (!label) continue;
+      label.textContent = entry.name;
+      // A name is written in ink or in light, whichever the colour of its country
+      // can carry.
+      const dark = luminance(worldFill(entry.iso2, data, palette, focus)) < 0.2;
+      label.classList.toggle('on-dark', dark);
+      label.classList.toggle('is-focus', entry.iso2 === focus);
+    }
+  }
+
+  map.on('zoomend', update);
+  return { update, entries };
+}
+
+function drawWorldMap(card, kind) {
+  const canvas = card.querySelector('[data-map-canvas]');
+  const source = card.querySelector('[data-map-data]');
+  if (!canvas || !source) return;
+  const data = JSON.parse(source.textContent);
+  const drawn = leaflet.maps.get(card);
+  if (drawn && drawn.kind === kind) {
+    drawn.map.invalidateSize();
+    return;
+  }
+  if (drawn) {
+    leaflet.maps.delete(card);
+    drawn.map.remove();
+  }
+  loadLeaflet()
+    .then((L) => loadWorldGeo(data.countriesUrl))
+    .then((geo) => {
+      const palette = worldPalette();
+      const focus = data.focus || null;
+      canvas.classList.add('world-canvas');
+      const map = L.map(canvas, { scrollWheelZoom: false, zoomControl: false, attributionControl: false, worldCopyJump: false, minZoom: 1, maxZoom: 8 });
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+      // No tiles. The countries are the map: a road map underneath a political map
+      // only argues with it.
+      const layers = new Map();
+      const layer = L.geoJSON(geo, {
+        style: (feature) => ({
+          fillColor: worldFill(feature.properties.iso2, data, palette, focus),
+          fillOpacity: 0.9,
+          color: palette['--world-stroke'],
+          weight: 0.6,
+        }),
+        onEachFeature: (feature, lyr) => {
+          const iso2 = feature.properties.iso2;
+          lyr.on('click', () => {
+            location.href = `/world/${iso2.toLowerCase()}`;
+          });
+          lyr.on('mouseover', () => lyr.setStyle({ weight: 1.8 }));
+          lyr.on('mouseout', () => lyr.setStyle({ weight: 0.6 }));
+          layers.set(iso2, lyr);
+        },
+      }).addTo(map);
+      const labels = worldLabels(L, map, geo, data, palette, focus);
+      // The map is the shape of the world, and there is nothing beyond it to look at.
+      map.setMaxBounds(layer.getBounds().pad(0.05));
+      if (focus) {
+        const target = layers.get(focus);
+        if (target) map.fitBounds(target.getBounds(), { padding: [24, 24], maxZoom: 5 });
+        else map.setView([20, 10], 2);
+      } else {
+        // The map opens on where the news is, not on the middle of the ocean.
+        const busy = [...layers.entries()]
+          .filter(([iso2]) => (data.countries[iso2]?.stories ?? 0) > 0)
+          .slice(0, 12)
+          .map(([, lyr]) => lyr.getBounds());
+        if (busy.length) {
+          const bounds = busy.reduce((acc, b) => acc.extend(b), L.latLngBounds([]));
+          map.fitBounds(bounds, { padding: [28, 28], maxZoom: 5 });
+          leaflet.maps.set(card, { map, layers, kind, data, busyBounds: bounds, updateLabels: labels.update });
+        } else {
+          map.setView([25, 15], 2);
+          leaflet.maps.set(card, { map, layers, kind, data, busyBounds: null, updateLabels: labels.update });
+        }
+        labels.update();
+        return;
+      }
+      leaflet.maps.set(card, { map, layers, kind, data, busyBounds: null, updateLabels: labels.update });
+      labels.update();
+    })
+    .catch(() => {
+      const note = document.createElement('p');
+      note.className = 'error-text';
+      note.textContent = 'The map could not be loaded.';
+      canvas.replaceChildren(note);
+    });
+}
+
+// The colours follow the theme, so a change of theme redraws the countries.
+const worldTheme = window.matchMedia('(prefers-color-scheme: dark)');
+worldTheme.addEventListener?.('change', () => {
+  for (const card of document.querySelectorAll('.map-panel')) {
+    const drawn = leaflet.maps.get(card);
+    if (!drawn || !drawn.layers) continue;
+    const palette = worldPalette();
+    const focus = drawn.data.focus || null;
+    for (const [iso2, layer] of drawn.layers) {
+      layer.setStyle({ fillColor: worldFill(iso2, drawn.data, palette, focus) });
+    }
+    // The names are written in the colour that suits the country they sit on.
+    drawn.updateLabels?.();
+  }
+});
+
+// The world map can be framed on the news, or on the whole world.
+document.addEventListener('click', (ev) => {
+  const button = ev.target.closest('[data-world-frame]');
+  if (!button) return;
+  const card = button.closest('.map-panel');
+  const drawn = card ? leaflet.maps.get(card) : null;
+  if (!drawn) return;
+  if (button.dataset.worldFrame === 'all') {
+    drawn.map.setView([25, 15], 2);
+    return;
+  }
+  if (drawn.busyBounds) drawn.map.fitBounds(drawn.busyBounds, { padding: [28, 28], maxZoom: 5 });
+});
+
 function drawMap(card) {
   const canvas = card.querySelector('[data-map-canvas]');
   const source = card.querySelector('[data-map-data]');
   if (!canvas || !source) return;
+  // The world map and the country map are drawn from country shapes, not from pins.
+  const kind = canvas.dataset.mapKind;
+  if (kind === 'world' || kind === 'country') {
+    drawWorldMap(card, kind);
+    return;
+  }
   const data = JSON.parse(source.textContent);
   loadLeaflet()
     .then((L) => {

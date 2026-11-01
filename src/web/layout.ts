@@ -1,7 +1,7 @@
 import type { App } from '../app.js';
 import { html, type SafeHtml } from './html.js';
 
-export type NavKey = 'stories' | 'inbox' | 'saved' | 'review' | 'sources' | 'glossary' | 'profile' | 'stats' | 'none';
+export type NavKey = 'stories' | 'world' | 'inbox' | 'saved' | 'review' | 'sources' | 'glossary' | 'profile' | 'stats' | 'none';
 
 export interface ClassifierStatus {
   state: 'ready' | 'unconfigured' | 'paused';
@@ -59,6 +59,7 @@ export function layout(app: App, opts: { title: string; nav: NavKey; body: SafeH
     <a class="brand" href="/" aria-label="Mimir home"><svg class="brand-mark" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18V6l9 8 9-8v12M3 6l9 5 9-5"/></svg><span>Mimir</span></a>
     <nav class="primary-nav" aria-label="Main navigation">
       ${link('stories', '/', 'Stories')}
+      ${link('world', '/world', 'World')}
       ${link('inbox', '/articles', 'Articles')}
       ${link('saved', '/articles?saved=1&sort=discovered', 'Saved')}
       ${link('glossary', '/terms', 'Glossary')}

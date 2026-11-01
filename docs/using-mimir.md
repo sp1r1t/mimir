@@ -4,8 +4,8 @@
 
 ## Use Mimir
 
-- **Navigation:** Stories, Articles, Saved articles, and Glossary share the compact
-  header. **More** opens Sources, Interest profile, Statistics, and Review low scores,
+- **Navigation:** Stories, World, Articles, Saved articles, and Glossary share the
+  compact header. **More** opens Sources, Interest profile, Statistics, and Review low scores,
   and shows classifier status. Search follows the story or article context. The
   navigation and forms work without JavaScript; keyboard users can skip to content.
 - **Stories:** the start page, opening on the **Relevant new** quick view: unseen stories
@@ -299,6 +299,60 @@ and the places are written by the server, so without JavaScript the page does no
 update itself: reload it to see the result. The **Full screen** button is only shown
 when JavaScript is there, because without it there is nothing to press. The same goes
 for the timeline's order switch.
+
+## The world
+
+**The World page.** The **World** tab in the header opens a map of the world, one
+country at a time, with what Mimir knows about each of them: who governs it, where the
+news is coming from, and when it votes next. It is the same reader as everywhere else:
+a map, a list, and a page per country.
+
+**One colour at a time.** The map can be coloured three ways, and the reader chooses
+one of them at the top of the card:
+
+- **Politics** — where the government sits on the left-right axis: left, centre-left,
+  centre, centre-right, right. A government that is not on that axis at all — a
+  one-party state, an absolute monarchy, a military government — is shown in its own
+  grey, and a country Mimir has no row for is shown in the pale grey of the unknown.
+- **Activity** — how much of your news touches each country in the last 30 days, in
+  four steps of one grey. No hue is used: activity is how much, not what.
+- **Elections** — whether an election is happening now (gold), is scheduled (pale
+  gold), or is not known.
+
+The colour of a country means exactly one thing at a time, and the legend under the map
+names what it means. The colours of the interface are not reused: the accent blue is
+for acting and the red is for failure, so the world map uses violet and orange for the
+ends of its axis.
+
+**A map of shapes, not of streets.** The world map is drawn from the shapes of the
+countries themselves — Natural Earth's 110m borders, which are public domain — so each
+country is a shape Mimir can fill with its own colour. There are no street tiles under
+it: a road map underneath a political map only argues with it. Every country carries
+its name, written where a cartographer would put it, and a name appears only when the
+country is big enough on screen to hold it. Zoom in and more names appear; pan and
+none of them moves or blinks away.
+
+**Moving now.** Under the map is the list of the countries worth a look, ordered by how
+loud they are: an election is happening now, an election is coming within thirty days,
+the news says the snapshot may be out of date, or the country is simply where your
+news is. Each row names the government, its position, the next election and how many
+stories and developments mention the country. Tapping a country opens its page.
+
+**A country page.** `/world/rs` shows one country: where it is, who governs it and with
+what party, where that government sits on the axis and what its source says, when it
+next votes and in how many days, whether Mimir has noticed that the snapshot may be out
+of date, and the stories that name it. The stories are the reader's own: they are the
+ones Mimir ranked for you.
+
+**Where the rows come from.** For now they are placeholders: the page says so in as many
+words, and every row carries its source and the date it was read. The fetch job that
+reads Wikipedia and Wikidata and writes the real snapshot is not built yet. When it is,
+the same rows will carry a real source, and the news will be able to mark a row out of
+date.
+
+**Without JavaScript.** The map needs JavaScript, as the story map does. Everything else
+does not: the moving list, the country table and the country page are all server
+rendered, and the three ways of colouring the map are links.
 
 ## Terms and the glossary
 

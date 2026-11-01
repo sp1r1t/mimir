@@ -197,6 +197,58 @@ to reach without taking over every screen. The compact font scale stays as the r
 chose it. Controls work with touch and keyboard, the skip link clears the sticky
 header, and navigation and forms retain their native HTML behaviour without scripts.
 
+### D10 — The world is one colour at a time
+
+**What.** The World page colours each country with one thing: the position of its
+government, the amount of the reader's news that touches it, or the state of its next
+election. The reader chooses which of the three, and the legend under the map names
+what the colour means. A government that is not on the left-right axis — a one-party
+state, an absolute monarchy, a military government — has a colour of its own, and a
+country Mimir knows nothing about is shown as unknown rather than as a guess.
+
+**Why.** The map can only say one thing with a colour. Three things at once are three
+meanings on one mark, and a reader who has to work out which is which stops reading
+the map. The axis is also not universal: a state with no party government and no
+elections is not "right-wing", and painting it as if it were would be a claim the
+source does not support.
+
+**How it shows.** Violet is the left end of the axis and orange the right end, with
+the page's own grey in the middle, because the centre of the spectrum is not a strong
+claim. The accent blue and the red are not used: they are the interface's action and
+failure, and the world map does not act on a country or fail at it. The activity map
+uses one grey in four steps, because how much is not a kind. Every legend entry carries
+a word, and the country rows carry the same colour beside the name.
+
+**What it means for later work.** Any new mark on a map says one thing. When a second
+thing has to be shown, it gets another channel — a badge, a glyph, a second map — and
+the reader is told which channel carries what.
+
+### D11 — The world map is a map of shapes, and the shapes carry their names
+
+**What.** The world map is drawn from the borders of the countries themselves rather
+than from street tiles, and every country carries its own name.
+
+**Why.** A political map and a street map are two different maps, and they argue. The
+place names and roads of a street map compete with the colour that carries the
+meaning, so the reader is left reading a road map with a wash on top of it. The
+countries were vector shapes all along — they were the thing being coloured — so the
+tiles are simply taken away. As for the names: most readers know most of the world,
+but not instantly, and a name written on its own country saves the hunt. A name also
+has to earn its place, or the map becomes a wall of text.
+
+**How it shows.** The shapes come from Natural Earth's 110m countries, which are public
+domain, and are deliberately coarse: a country is read as one mark. A name is written
+at the point Natural Earth's own cartographers chose, and where that point falls in the
+sea it is moved onto the country's land, so a name is always written on the colour of
+the country it belongs to — which is also why it is written in ink or in light,
+whichever that colour can carry. A name appears only when the country is big enough on
+screen to hold it, and no two names touch. Zooming in uncovers more names; panning
+never makes one blink away.
+
+**What it means for later work.** A map that carries data is drawn from the data's own
+shapes. Tiles belong to maps that show where something happened, not to maps that say
+what a place is.
+
 ---
 
 ## The visual language
@@ -211,6 +263,9 @@ header, and navigation and forms retain their native HTML behaviour without scri
 | Wrong, failed | `#b3261e` | `#f08a83` |
 | Waiting, caution | `#8a5a00` | `#f1c46b` |
 | Context, metadata | `#77766f` | `#8f8e86` |
+| World map: left end of the axis | `#6d4aa8` | `#a184e0` |
+| World map: right end of the axis | `#c2681c` | `#e08a2c` |
+| World map: not on the axis | `#6f6e68` | `#6a6963` |
 | Page / card surface | `#fcfcfb` | `#1a1a19` |
 | Page background | `#f6f6f4` | `#121211` |
 | Border | `#e2e1dc` | `#2f2f2c` |
